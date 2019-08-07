@@ -6,15 +6,14 @@ A set of tools for working with *mlflow* (see https://mlflow.org).
 ## Features
 
 * managed artifact logging and **loading** enables
-    * run scripts in parallel without worrying about overwriting files
-    * automatic artifact logging
-    * artifact **loading**
-    * central configuration of logging and loading behavior
-* easy parameter logging enables to log function parameters and locals with a simple call to `mlflowhelper.log_vars()`
+    * **automatic** artifact logging and cleanup
+    * **no overwriting files** when running scripts in parallel 
+    * **loading** artifact 
+    * **central configuration** of logging and loading behavior
+* log **all** function parameters and locals with a simple call to `mlflowhelper.log_vars()`
 
 
 ## Documentation
-
 
 ### Managed artifact logging and loading
 
@@ -23,22 +22,23 @@ A set of tools for working with *mlflow* (see https://mlflow.org).
 ```python
 from matplotlib import pyplot as plt
 import mlflowhelper
+
 with mlflowhelper.start_run():
     with mlflowhelper.managed_artifact("plot.png") as artifact:
         fig = plt.figure()
         plt.plot([1,2,3], [1,2,3])
         fig.savefig(artifact.get_path())
 ```
-This code snippet will automatically create a temporary folder for you. 
-Then using the path provided by `artifact.get_path()` you automatically write to that temporary folder.
-The created artifact will automatically be logged.
-After the artifact is logged, it's local copy is deleted automatically to preserve space.
-When the run is finished, the temporary directory is deleted as well. 
+This code snippet will automatically log the created artifact.
+At the same time if will manage the artifact in a temporary folder so that you don't have to worry about 
+overwriting it when running your scripts in parallel. 
+By default, this also cleans up the artifact and the temporary folder after logging.
 
-This also works for directories:
+You can also manage artifacts on a directory level:
 ```python
 from matplotlib import pyplot as plt
 import mlflowhelper
+
 with mlflowhelper.start_run():
     with mlflowhelper.managed_artifact_dir("plots") as artifact_dir:
     
@@ -54,8 +54,19 @@ with mlflowhelper.start_run():
 ```
 
 #### Artifact loading
+Sometimes you may want to run experiments but reuse some precomputed artifact from a different run.
+This can be done as follows:
+```python
+
+```
+
 
 #### Central logging and loading behavior management
+
+Logging and loading behavior can be managed in a central way:
+```python
+
+``` 
 
 
 ### Easy parameter logging
@@ -85,12 +96,15 @@ This will log:
 
 
 ### Other
-TBA
+There are a few more convenience functions included in `mlflowhelper`:
 
 
 
-Note
-====
+## Roadmap / Possible features
+* purge local artifacts (check via API which runs are marked as deleted and delete their artifacts)
 
+
+
+## Note
 This project has been set up using PyScaffold 3.2.1. For details and usage
 information on PyScaffold see https://pyscaffold.org/.
