@@ -59,6 +59,23 @@ as preprocessed data, trained models, etc.). This can be done as follows:
 import mlflowhelper
 import pandas as pd
 
+with mlflowhelper.start_run():
+    mlflowhelper.set_load(run_id="e1363f760b1e4ab3a9e93f856f2e9341", stages=["load_data"]) # activate loading from previous run
+    with mlflowhelper.managed_artifact_dir("data.csv", stage="load_data") as artifact:
+        if artifact.loaded:
+            # load artifact
+            data = pd.read_csv(artifact.get_path())
+        else:
+            # create and save artifact
+            data = pd.read_csv("/shared/dir/data.csv").sample(frac=1)
+            data.to_csv(artifact.get_path())
+```
+
+Similarly, this works for directories of course:
+```python
+import mlflowhelper
+import pandas as pd
+
 mlflowhelper.set_load(run_id="e1363f760b1e4ab3a9e93f856f2e9341", stages=["load_data"]) # activate loading from previous run
 with mlflowhelper.start_run():
     with mlflowhelper.managed_artifact_dir("data", stage="load_data") as artifact_dir:
@@ -75,23 +92,6 @@ with mlflowhelper.start_run():
             # save artifacts
             train.to_csv(train_path)
             test.to_csv(test_path)
-```
-
-Similarly, this works for directories of course:
-```python
-import mlflowhelper
-import pandas as pd
-
-with mlflowhelper.start_run():
-    mlflowhelper.set_load(run_id="e1363f760b1e4ab3a9e93f856f2e9341", stages=["load_data"]) # activate loading from previous run
-    with mlflowhelper.managed_artifact_dir("data.csv", stage="load_data") as artifact:
-        if artifact.loaded:
-            # load artifact
-            data = pd.read_csv(artifact.get_path())
-        else:
-            # create and save artifact
-            data = pd.read_csv("/shared/dir/data.csv").sample(frac=1)
-            data.to_csv(artifact.get_path())
 ```
 
 **Note:** The `stage` parameter must be set in `mlflowhelper.managed_artifact(_dir)` to enable loading.
@@ -126,6 +126,8 @@ with mlflowhelper.start_run():
             train.to_csv(train_path)
             test.to_csv(test_path)
 ``` 
+
+**Note:** For central managing the `stage` parameter must be set in `mlflowhelper.managed_artifact(_dir)`.
 
 
 ### Easy parameter logging
