@@ -29,8 +29,8 @@ with mlflowhelper.start_run():
         plt.plot([1,2,3], [1,2,3])
         fig.savefig(artifact.get_path())
 ```
-This code snippet will automatically log the created artifact.
-At the same time if will manage the artifact in a temporary folder so that you don't have to worry about 
+This code snippet automatically logs the created artifact (`plot.png`).
+At the same time if will create the artifact in a temporary folder so that you don't have to worry about 
 overwriting it when running your scripts in parallel. 
 By default, this also cleans up the artifact and the temporary folder after logging.
 
@@ -54,8 +54,8 @@ with mlflowhelper.start_run():
 ```
 
 #### Artifact loading
-Sometimes you may want to run experiments but reuse some precomputed artifact from a different run.
-This can be done as follows:
+You may want to run experiments but reuse some precomputed artifact from a different run (such 
+as preprocessed data, trained models, etc.). This can be done as follows:
 ```python
 
 ```
@@ -100,9 +100,10 @@ There are a few more convenience functions included in `mlflowhelper`:
 
 
 
-## Roadmap / Possible features
+## TODOs / Possible features
+* check if loading works across experiments
+* fine-grained loading behavior (right now we can only specify one run as a source for all artifacts)
 * purge local artifacts (check via API which runs are marked as deleted and delete their artifacts)
-
 
 
 ## Note
