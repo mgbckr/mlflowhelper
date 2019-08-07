@@ -25,7 +25,9 @@ script:
     pre-commit install
     pre-commit run --all-files
   fi
+
 deploy:
+
 - provider: pypi
   distributions: sdist
   server: https://test.pypi.org/legacy/
@@ -35,6 +37,8 @@ deploy:
   on:
     branch: master
     tags: false
+  skip_existing: true
+
 - provider: pypi
   distributions: sdist
   user: mgbckr
@@ -43,6 +47,8 @@ deploy:
   on:
     branch: master
     tags: true
+  skip_existing: true
+
 after_success:
 - if [[ "$COVERAGE" == "true" ]]; then coveralls || echo "failed"; fi
 after_script:
