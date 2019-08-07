@@ -1,7 +1,6 @@
 # mlflowhelper
 
-
-A set of tools for working with *mlflow* (see https://mlflow.org).
+A set of tools for working with *mlflow* (see https://mlflow.org)
 
 ## Features
 
@@ -57,15 +56,75 @@ with mlflowhelper.start_run():
 You may want to run experiments but reuse some precomputed artifact from a different run (such 
 as preprocessed data, trained models, etc.). This can be done as follows:
 ```python
+import mlflowhelper
+import pandas as pd
 
+mlflowhelper.set_load(run_id="e1363f760b1e4ab3a9e93f856f2e9341", stages=["load_data"]) # activate loading from previous run
+with mlflowhelper.start_run():
+    with mlflowhelper.managed_artifact_dir("data", stage="load_data") as artifact_dir:
+        train_path = artifact_dir.get_path("test.csv")
+        test_path = artifact_dir.get_path("train.csv")
+        if artifact.loaded:
+            # load artifacts
+            train = pd.read_csv(train_path)
+            test = pd.read_csv(test_path)
+        else:
+            data = pd.read_csv("/shared/dir/data.csv").sample(frac=1)
+            train = data.iloc[:100,:]
+            test = data.iloc[100:,:]
+            # save artifacts
+            train.to_csv(train_path)
+            test.to_csv(test_path)
 ```
 
+Similarly, this works for directories of course:
+```python
+import mlflowhelper
+import pandas as pd
+
+with mlflowhelper.start_run():
+    mlflowhelper.set_load(run_id="e1363f760b1e4ab3a9e93f856f2e9341", stages=["load_data"]) # activate loading from previous run
+    with mlflowhelper.managed_artifact_dir("data.csv", stage="load_data") as artifact:
+        if artifact.loaded:
+            # load artifact
+            data = pd.read_csv(artifact.get_path())
+        else:
+            # create and save artifact
+            data = pd.read_csv("/shared/dir/data.csv").sample(frac=1)
+            data.to_csv(artifact.get_path())
+```
+
+**Note:** The `stage` parameter must be set in `mlflowhelper.managed_artifact(_dir)` to enable loading.
 
 #### Central logging and loading behavior management
 
 Logging and loading behavior can be managed in a central way:
 ```python
+import mlflowhelper
+import pandas as pd
 
+with mlflowhelper.start_run():
+    
+    # activate loading the stage `load_data` from previous run `e1363f760b1e4ab3a9e93f856f2e9341`
+    mlflowhelper.set_load(run_id="e1363f760b1e4ab3a9e93f856f2e9341", stages=["load_data"])
+    
+    # deactivate logging the stage `load_data`, in this case for example because it was loaded from a previous run
+    mlflowhelper.set_skip_log(stages=["load_data"])
+
+    with mlflowhelper.managed_artifact_dir("data", stage="load_data") as artifact_dir:
+        train_path = artifact_dir.get_path("test.csv")
+        test_path = artifact_dir.get_path("train.csv")
+        if artifact.loaded:
+            # load artifacts
+            train = pd.read_csv(train_path)
+            test = pd.read_csv(test_path)
+        else:
+            data = pd.read_csv("/shared/dir/data.csv").sample(frac=1)
+            train = data.iloc[:100,:]
+            test = data.iloc[100:,:]
+            # save artifacts
+            train.to_csv(train_path)
+            test.to_csv(test_path)
 ``` 
 
 
@@ -100,11 +159,16 @@ This will log:
 There are a few more convenience functions included in `mlflowhelper`:
 
 
-
-## TODOs / Possible features
-* check if loading works across experiments
-* fine-grained loading behavior (right now we can only specify one run as a source for all artifacts)
-* purge local artifacts (check via API which runs are marked as deleted and delete their artifacts)
+## TODOs / Ideas
+- [ ] check if loading works across experiments
+- [ ] purge local artifacts (check via API which runs are marked as deleted and delete their artifacts)
+- [ ] support nested runs by creating subdirectories based on experiment and run
+- [ ] support loading from central cache instead of from runs
+- [ ] automatically log from where and what has been loaded
+- [ ] set tags for logged stages (to check for artifacts before loading them)
+- [ ] consider loading extensions:
+  - [ ] does nested loading make sense (different loads for certain nested runs)?
+  - [ ] does mixed loading make sense (loading artifacts from different runs for different stages)?
 
 
 ## Note
