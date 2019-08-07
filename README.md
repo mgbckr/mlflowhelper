@@ -14,6 +14,10 @@ A set of tools for working with *mlflow* (see https://mlflow.org)
 
 ## Documentation
 
+```
+pip install mlflowhelper
+```
+
 ### Managed artifact logging and loading
 
 #### General functionality
