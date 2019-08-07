@@ -5,7 +5,7 @@ A set of tools for working with *mlflow* (see https://mlflow.org).
 
 ## Features
 
-* managed artifact logging and **loading** enables
+* managed artifact logging and **loading**
     * **automatic** artifact logging and cleanup
     * **no overwriting files** when running scripts in parallel 
     * **loading** artifact 
@@ -79,7 +79,8 @@ import mlflowhelper
 
 def main(param1, param2, param3="defaultvalue", verbose=0, *args, **kwargs):
     some_variable = "x"
-    mlflowhelper.log_vars(exclude=["verbose"])
+    with mlflowhelper.start_run(): # mlflow.start_run() is also OK here
+        mlflowhelper.log_vars(exclude=["verbose"])
 
 if __name__ == '__main__':
     main("a", "b", something_else=6)
