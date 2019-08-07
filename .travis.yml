@@ -19,8 +19,8 @@ install:
   # The automatic creation of a `requirements.txt` file is deprecated.
   # See `Dependency Management` in the docs for other options.
 before_script:
-  - git config --global user.email "you@example.com"
-  - git config --global user.name "Your Name"
+  - git config --global user.email "1241516+mgbckr@users.noreply.github.com"
+  - git config --global user.name "mgbckr"
 script:
   - python setup.py develop
   - tox
