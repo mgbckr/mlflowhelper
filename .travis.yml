@@ -9,9 +9,18 @@ virtualenv:
 matrix:
   fast_finish: true
   include:
+    - python: 3.4
+      env: DISTRIB="ubuntu" TOX_PYTHON_VERSION="py36" COVERAGE="true"
+    - python: 3.5
+      env: DISTRIB="ubuntu" TOX_PYTHON_VERSION="py36" COVERAGE="true"
     - python: 3.6
       env: DISTRIB="ubuntu" TOX_PYTHON_VERSION="py36" COVERAGE="true"
+    - python: 3.7
+      env: DISTRIB="ubuntu" TOX_PYTHON_VERSION="py36" COVERAGE="true"
+    - env: DISTRIB="conda" PYTHON_VERSION="3.4" COVERAGE="false"
+    - env: DISTRIB="conda" PYTHON_VERSION="3.5" COVERAGE="false"
     - env: DISTRIB="conda" PYTHON_VERSION="3.6" COVERAGE="false"
+    - env: DISTRIB="conda" PYTHON_VERSION="3.7" COVERAGE="false"
 install:
   - source tests/travis_install.sh
   - pip install -r requirements.txt
@@ -23,8 +32,7 @@ install:
 #  - git config --global user.name "Your Name"
 script:
   - python setup.py develop
-#  - tox
-  - python setup.py test
+  - tox
   - |
     if [[ "$COVERAGE" == "true" ]]; then
       pre-commit install
@@ -38,24 +46,3 @@ cache:
   pip: true
   directories:
     - $HOME/miniconda
-
-  # test pypi
-- provider: pypi
-  distributions: sdist
-  server: https://test.pypi.org/legacy/
-  user: "mgbckr"
-  password:
-    secure: cF/G/vUnVOvLRi6YMaLddDLylcizDeL8CuM+bqUt5YRxQSHW1ptFsnsKDu+gbE/HN9Y7NiLwoIQ3up7YmKnlT3ZcAc+cy8J7/9TwUSAxVj+yFoPauHcFFP+KumLODoELNY4eEFPpp779Dn9Q3uadYonvPjsyXGTs/inR5i2KuFBtDJcIymRs3FkwZvwsKR9TGv1R7j3tnYNcTNSnY/VJCAKfW7WCygMLy0JzHG3cV22jpfBL7jRMlLagi2q+lsHzhrkTQadgFLUt5I+L4Hr7P/HMyAZbYwxwGA5W63y8d4swY6BaxiGoSa6iCQBIXQ8V+TNW0YV2nw3mIimbno8ZPW5Q7Bzt/gKPm4x9Yg2WPWYjgAEKcmkRCf01u41ToAS1X1NTQfrxEzggU5FJUQ8/jEQzbjnE5ZOF2OloZe4mK3qRKosc2jM+oSpCLjXI5BL+RwGv06PeaHxPaf6NYHvas5PLzpj45QdNYXntkhepqdnNlQHmc68JCIGdJM5z+7B0JuCZTF9CHtGd792Dp7G9N5+DOOveVKCm0iWz3OYBgxz4sabZsXx73FERTFpSwqH/G2oIbArQLPf5zvpyQcjxcrYcZ4/yodtmD7EeCbNT8u0WVH4C0FApyy6nieu53pK+ZEDjyVRz64qDu+Y8A1S3g+JepzYnGNQHdNOieHqg5/s=
-  on:
-    branch: master
-    tags: false
-
-# production pypi
-- provider: pypi
-  distributions: sdist
-  user: "mgbckr"
-  password:
-    secure: cF/G/vUnVOvLRi6YMaLddDLylcizDeL8CuM+bqUt5YRxQSHW1ptFsnsKDu+gbE/HN9Y7NiLwoIQ3up7YmKnlT3ZcAc+cy8J7/9TwUSAxVj+yFoPauHcFFP+KumLODoELNY4eEFPpp779Dn9Q3uadYonvPjsyXGTs/inR5i2KuFBtDJcIymRs3FkwZvwsKR9TGv1R7j3tnYNcTNSnY/VJCAKfW7WCygMLy0JzHG3cV22jpfBL7jRMlLagi2q+lsHzhrkTQadgFLUt5I+L4Hr7P/HMyAZbYwxwGA5W63y8d4swY6BaxiGoSa6iCQBIXQ8V+TNW0YV2nw3mIimbno8ZPW5Q7Bzt/gKPm4x9Yg2WPWYjgAEKcmkRCf01u41ToAS1X1NTQfrxEzggU5FJUQ8/jEQzbjnE5ZOF2OloZe4mK3qRKosc2jM+oSpCLjXI5BL+RwGv06PeaHxPaf6NYHvas5PLzpj45QdNYXntkhepqdnNlQHmc68JCIGdJM5z+7B0JuCZTF9CHtGd792Dp7G9N5+DOOveVKCm0iWz3OYBgxz4sabZsXx73FERTFpSwqH/G2oIbArQLPf5zvpyQcjxcrYcZ4/yodtmD7EeCbNT8u0WVH4C0FApyy6nieu53pK+ZEDjyVRz64qDu+Y8A1S3g+JepzYnGNQHdNOieHqg5/s=
-  on:
-    branch: master
-    tags: true
