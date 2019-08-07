@@ -36,7 +36,7 @@ deploy:
     secure: "E9dcK6spIUKzf9NEVBJzvPlTocq7in+c5lOBhH+v/pmGub5RTYyKa4lZZtd8BobcaRuwiuUWpkdQlnr4Hf9eqn80ZG35fGT4tR1bdPYMz0RRkVYOv2XX82n/fk7YM0nfDFynTFeBbd2iwLLqkV76JGZjya7iWAq75tg/7ulXkWSTxg+zErTMiOWbD6XecLAA5QAhcspb2CiJkOQHxd6HsjGCApIm8hqrxtSGPnVOiaJfX0eBVwnDeZKLffAkhSgjAOXVrt6wDFv2DrjVTCQ8UlqsqvPY2pLOUghACcI0akmOZL+rBOnOSTtc/v+EvI+lQnZBxFwBBxyOjCvlirltwSO32jf4G+u79Rjg72U8x5VyfV7PlRPmun6+HHZzKGVTT6WxWv+q4QGgNEBeZJEwuLMxBSg0o7Y9bKvllAy+QAE3ZLPcElKv2OFsSlcv7iGKWUe4gBdsDmjrTf6DZlwIerB9LVaSoy9A35xtY2Jbus2ry8VbebOcgKOcASXBsSV+CcCdXLpWHlhBka9iBxnzCSmEnbAQh7jMpfPieydm8YcNJrRuhZHghtwHUx2bkk7TrE08aN4ZBQP1bKi2XQp7ekce44gdBNzauv/pgONhKisd0qX3tfHSh2UXRp1fthS6QuzxVmUe1GFCBl2z4MlGUEpdOOEkKueryGjTWXEFCYc="
   on:
     branch: master
-    tags: false
+    tags: true
   skip_existing: true
   skip_cleanup: true
 
@@ -46,7 +46,7 @@ deploy:
   password:
     secure: "E9dcK6spIUKzf9NEVBJzvPlTocq7in+c5lOBhH+v/pmGub5RTYyKa4lZZtd8BobcaRuwiuUWpkdQlnr4Hf9eqn80ZG35fGT4tR1bdPYMz0RRkVYOv2XX82n/fk7YM0nfDFynTFeBbd2iwLLqkV76JGZjya7iWAq75tg/7ulXkWSTxg+zErTMiOWbD6XecLAA5QAhcspb2CiJkOQHxd6HsjGCApIm8hqrxtSGPnVOiaJfX0eBVwnDeZKLffAkhSgjAOXVrt6wDFv2DrjVTCQ8UlqsqvPY2pLOUghACcI0akmOZL+rBOnOSTtc/v+EvI+lQnZBxFwBBxyOjCvlirltwSO32jf4G+u79Rjg72U8x5VyfV7PlRPmun6+HHZzKGVTT6WxWv+q4QGgNEBeZJEwuLMxBSg0o7Y9bKvllAy+QAE3ZLPcElKv2OFsSlcv7iGKWUe4gBdsDmjrTf6DZlwIerB9LVaSoy9A35xtY2Jbus2ry8VbebOcgKOcASXBsSV+CcCdXLpWHlhBka9iBxnzCSmEnbAQh7jMpfPieydm8YcNJrRuhZHghtwHUx2bkk7TrE08aN4ZBQP1bKi2XQp7ekce44gdBNzauv/pgONhKisd0qX3tfHSh2UXRp1fthS6QuzxVmUe1GFCBl2z4MlGUEpdOOEkKueryGjTWXEFCYc="
   on:
-    branch: master
+    branch: release
     tags: true
   skip_existing: true
   skip_cleanup: true
