@@ -1,13 +1,12 @@
 import inspect
 from typing import Optional
-
-import mlflow
-from mlflow.entities.run_status import RunStatus
-
 import tempfile
 import shutil
 import os
 from contextlib import contextmanager
+
+import mlflow
+from mlflow.entities.run_status import RunStatus
 
 
 _artifact_manager = None # type: Optional[ArtifactManager]

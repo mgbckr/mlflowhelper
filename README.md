@@ -81,7 +81,7 @@ with mlflowhelper.start_run():
     with mlflowhelper.managed_artifact_dir("data", stage="load_data") as artifact_dir:
         train_path = artifact_dir.get_path("test.csv")
         test_path = artifact_dir.get_path("train.csv")
-        if artifact.loaded:
+        if artifact_dir.loaded:
             # load artifacts
             train = pd.read_csv(train_path)
             test = pd.read_csv(test_path)
@@ -114,7 +114,7 @@ with mlflowhelper.start_run():
     with mlflowhelper.managed_artifact_dir("data", stage="load_data") as artifact_dir:
         train_path = artifact_dir.get_path("test.csv")
         test_path = artifact_dir.get_path("train.csv")
-        if artifact.loaded:
+        if artifact_dir.loaded:
             # load artifacts
             train = pd.read_csv(train_path)
             test = pd.read_csv(test_path)
