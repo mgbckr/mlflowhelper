@@ -38,6 +38,7 @@ deploy:
     branch: master
     tags: false
   skip_existing: true
+  skip_cleanup: true
 
 - provider: pypi
   distributions: sdist
@@ -48,6 +49,7 @@ deploy:
     branch: master
     tags: true
   skip_existing: true
+  skip_cleanup: true
 
 after_success:
 - if [[ "$COVERAGE" == "true" ]]; then coveralls || echo "failed"; fi
