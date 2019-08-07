@@ -1,7 +1,3 @@
-# Travis configuration file using the build matrix feature
-# Read more under http://docs.travis-ci.com/user/build-configuration/
-# THIS SCRIPT IS SUPPOSED TO BE AN EXAMPLE. MODIFY IT ACCORDING TO YOUR NEEDS!
-
 sudo: false
 language: python
 virtualenv:
@@ -9,60 +5,49 @@ virtualenv:
 matrix:
   fast_finish: true
   include:
-    - python: 3.5
-      env: DISTRIB="ubuntu" TOX_PYTHON_VERSION="py35" COVERAGE="true"
-    - python: 3.6
-      env: DISTRIB="ubuntu" TOX_PYTHON_VERSION="py36" COVERAGE="true"
-    - python: 3.7
-      env: DISTRIB="ubuntu" TOX_PYTHON_VERSION="py37" COVERAGE="true"
-    - env: DISTRIB="conda" PYTHON_VERSION="3.5" COVERAGE="false"
-    - env: DISTRIB="conda" PYTHON_VERSION="3.6" COVERAGE="false"
-    - env: DISTRIB="conda" PYTHON_VERSION="3.7" COVERAGE="false"
+  - python: 3.5
+    env: DISTRIB="ubuntu" TOX_PYTHON_VERSION="py35" COVERAGE="true"
+  - python: 3.6
+    env: DISTRIB="ubuntu" TOX_PYTHON_VERSION="py36" COVERAGE="true"
+  - python: 3.7
+    env: DISTRIB="ubuntu" TOX_PYTHON_VERSION="py37" COVERAGE="true"
+  - env: DISTRIB="conda" PYTHON_VERSION="3.5" COVERAGE="false"
+  - env: DISTRIB="conda" PYTHON_VERSION="3.6" COVERAGE="false"
+  - env: DISTRIB="conda" PYTHON_VERSION="3.7" COVERAGE="false"
 install:
-  - source tests/travis_install.sh
-  - pip install -r requirements.txt
-  # ^  DEPRECATION WARNING:
-  # The automatic creation of a `requirements.txt` file is deprecated.
-  # See `Dependency Management` in the docs for other options.
-#before_script:
-#  - git config --global user.email "you@example.com"
-#  - git config --global user.name "Your Name"
+- source tests/travis_install.sh
+- pip install -r requirements.txt
 script:
-  - python setup.py develop
-  - tox
-  - |
-    if [[ "$COVERAGE" == "true" ]]; then
-      pre-commit install
-      pre-commit run --all-files
-    fi
+- python setup.py develop
+- tox
+- |
+  if [[ "$COVERAGE" == "true" ]]; then
+    pre-commit install
+    pre-commit run --all-files
+  fi
 deploy:
-
-    # test pypi
-  - provider: pypi
-    distributions: sdist
-    server: https://test.pypi.org/legacy/
-    user: "mgbckr"
-    password:
-      secure: cF/G/vUnVOvLRi6YMaLddDLylcizDeL8CuM+bqUt5YRxQSHW1ptFsnsKDu+gbE/HN9Y7NiLwoIQ3up7YmKnlT3ZcAc+cy8J7/9TwUSAxVj+yFoPauHcFFP+KumLODoELNY4eEFPpp779Dn9Q3uadYonvPjsyXGTs/inR5i2KuFBtDJcIymRs3FkwZvwsKR9TGv1R7j3tnYNcTNSnY/VJCAKfW7WCygMLy0JzHG3cV22jpfBL7jRMlLagi2q+lsHzhrkTQadgFLUt5I+L4Hr7P/HMyAZbYwxwGA5W63y8d4swY6BaxiGoSa6iCQBIXQ8V+TNW0YV2nw3mIimbno8ZPW5Q7Bzt/gKPm4x9Yg2WPWYjgAEKcmkRCf01u41ToAS1X1NTQfrxEzggU5FJUQ8/jEQzbjnE5ZOF2OloZe4mK3qRKosc2jM+oSpCLjXI5BL+RwGv06PeaHxPaf6NYHvas5PLzpj45QdNYXntkhepqdnNlQHmc68JCIGdJM5z+7B0JuCZTF9CHtGd792Dp7G9N5+DOOveVKCm0iWz3OYBgxz4sabZsXx73FERTFpSwqH/G2oIbArQLPf5zvpyQcjxcrYcZ4/yodtmD7EeCbNT8u0WVH4C0FApyy6nieu53pK+ZEDjyVRz64qDu+Y8A1S3g+JepzYnGNQHdNOieHqg5/s=
-    on:
-      branch: master
-      tags: false
-
-  # production pypi
-  - provider: pypi
-    distributions: sdist
-    user: "mgbckr"
-    password:
-      secure: cF/G/vUnVOvLRi6YMaLddDLylcizDeL8CuM+bqUt5YRxQSHW1ptFsnsKDu+gbE/HN9Y7NiLwoIQ3up7YmKnlT3ZcAc+cy8J7/9TwUSAxVj+yFoPauHcFFP+KumLODoELNY4eEFPpp779Dn9Q3uadYonvPjsyXGTs/inR5i2KuFBtDJcIymRs3FkwZvwsKR9TGv1R7j3tnYNcTNSnY/VJCAKfW7WCygMLy0JzHG3cV22jpfBL7jRMlLagi2q+lsHzhrkTQadgFLUt5I+L4Hr7P/HMyAZbYwxwGA5W63y8d4swY6BaxiGoSa6iCQBIXQ8V+TNW0YV2nw3mIimbno8ZPW5Q7Bzt/gKPm4x9Yg2WPWYjgAEKcmkRCf01u41ToAS1X1NTQfrxEzggU5FJUQ8/jEQzbjnE5ZOF2OloZe4mK3qRKosc2jM+oSpCLjXI5BL+RwGv06PeaHxPaf6NYHvas5PLzpj45QdNYXntkhepqdnNlQHmc68JCIGdJM5z+7B0JuCZTF9CHtGd792Dp7G9N5+DOOveVKCm0iWz3OYBgxz4sabZsXx73FERTFpSwqH/G2oIbArQLPf5zvpyQcjxcrYcZ4/yodtmD7EeCbNT8u0WVH4C0FApyy6nieu53pK+ZEDjyVRz64qDu+Y8A1S3g+JepzYnGNQHdNOieHqg5/s=
-    on:
-      branch: master
-      tags: true
-
+- provider: pypi
+  distributions: sdist
+  server: https://test.pypi.org/legacy/
+  user: mgbckr
+  password:
+    secure: "E9dcK6spIUKzf9NEVBJzvPlTocq7in+c5lOBhH+v/pmGub5RTYyKa4lZZtd8BobcaRuwiuUWpkdQlnr4Hf9eqn80ZG35fGT4tR1bdPYMz0RRkVYOv2XX82n/fk7YM0nfDFynTFeBbd2iwLLqkV76JGZjya7iWAq75tg/7ulXkWSTxg+zErTMiOWbD6XecLAA5QAhcspb2CiJkOQHxd6HsjGCApIm8hqrxtSGPnVOiaJfX0eBVwnDeZKLffAkhSgjAOXVrt6wDFv2DrjVTCQ8UlqsqvPY2pLOUghACcI0akmOZL+rBOnOSTtc/v+EvI+lQnZBxFwBBxyOjCvlirltwSO32jf4G+u79Rjg72U8x5VyfV7PlRPmun6+HHZzKGVTT6WxWv+q4QGgNEBeZJEwuLMxBSg0o7Y9bKvllAy+QAE3ZLPcElKv2OFsSlcv7iGKWUe4gBdsDmjrTf6DZlwIerB9LVaSoy9A35xtY2Jbus2ry8VbebOcgKOcASXBsSV+CcCdXLpWHlhBka9iBxnzCSmEnbAQh7jMpfPieydm8YcNJrRuhZHghtwHUx2bkk7TrE08aN4ZBQP1bKi2XQp7ekce44gdBNzauv/pgONhKisd0qX3tfHSh2UXRp1fthS6QuzxVmUe1GFCBl2z4MlGUEpdOOEkKueryGjTWXEFCYc="
+  on:
+    branch: master
+    tags: false
+- provider: pypi
+  distributions: sdist
+  user: mgbckr
+  password:
+    secure: "E9dcK6spIUKzf9NEVBJzvPlTocq7in+c5lOBhH+v/pmGub5RTYyKa4lZZtd8BobcaRuwiuUWpkdQlnr4Hf9eqn80ZG35fGT4tR1bdPYMz0RRkVYOv2XX82n/fk7YM0nfDFynTFeBbd2iwLLqkV76JGZjya7iWAq75tg/7ulXkWSTxg+zErTMiOWbD6XecLAA5QAhcspb2CiJkOQHxd6HsjGCApIm8hqrxtSGPnVOiaJfX0eBVwnDeZKLffAkhSgjAOXVrt6wDFv2DrjVTCQ8UlqsqvPY2pLOUghACcI0akmOZL+rBOnOSTtc/v+EvI+lQnZBxFwBBxyOjCvlirltwSO32jf4G+u79Rjg72U8x5VyfV7PlRPmun6+HHZzKGVTT6WxWv+q4QGgNEBeZJEwuLMxBSg0o7Y9bKvllAy+QAE3ZLPcElKv2OFsSlcv7iGKWUe4gBdsDmjrTf6DZlwIerB9LVaSoy9A35xtY2Jbus2ry8VbebOcgKOcASXBsSV+CcCdXLpWHlhBka9iBxnzCSmEnbAQh7jMpfPieydm8YcNJrRuhZHghtwHUx2bkk7TrE08aN4ZBQP1bKi2XQp7ekce44gdBNzauv/pgONhKisd0qX3tfHSh2UXRp1fthS6QuzxVmUe1GFCBl2z4MlGUEpdOOEkKueryGjTWXEFCYc="
+  on:
+    branch: master
+    tags: true
 after_success:
-  - if [[ "$COVERAGE" == "true" ]]; then coveralls || echo "failed"; fi
+- if [[ "$COVERAGE" == "true" ]]; then coveralls || echo "failed"; fi
 after_script:
-  - travis-cleanup
+- travis-cleanup
 cache:
   pip: true
   directories:
-    - $HOME/miniconda
+  - "$HOME/miniconda"
