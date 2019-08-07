@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 
-import pytest
 import shutil
-from matplotlib import pyplot as plt
 
 import mlflowhelper
+import pytest
+from matplotlib import pyplot as plt
 
 
 @pytest.fixture(autouse=True)
@@ -19,5 +19,5 @@ def cleanup_tests(request):
 def test_no_exception():
     with mlflowhelper.start_run():
         with mlflowhelper.managed_artifact("test.png") as a:
-            plt.plot([1,2,3], [1,2,3]); plt.savefig(a.get_path())
-
+            plt.plot([1, 2, 3], [1, 2, 3])
+            plt.savefig(a.get_path())

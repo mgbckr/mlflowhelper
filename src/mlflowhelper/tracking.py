@@ -1,15 +1,15 @@
 import inspect
-from typing import Optional
-import tempfile
-import shutil
 import os
+import shutil
+import tempfile
 from contextlib import contextmanager
+from typing import Optional
 
 import mlflow
 from mlflow.entities.run_status import RunStatus
 
+_artifact_manager = None  # type: Optional[ArtifactManager]
 
-_artifact_manager = None # type: Optional[ArtifactManager]
 
 def set_tracking_uri(tracking_uri):
     """Sets the tracking URI analogously to `mlflow.set_tracking_uri` but supports special keywords.
@@ -24,6 +24,7 @@ def set_tracking_uri(tracking_uri):
     None
     """
     mlflow.set_tracking_uri(_tracking_uri(tracking_uri))
+
 
 def get_or_create_experiment(experiment_name, tracking_uri=None):
     """Get the experiment id of the given experiment name. If it does not exist, it is created.
@@ -44,11 +45,12 @@ def get_or_create_experiment(experiment_name, tracking_uri=None):
     """
     tracking_uri = _tracking_uri(tracking_uri)
     client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
-    try:
+    experiment_id = client.get_experiment_by_name(experiment_name).experiment_id
+    if experiment_id is None:
         experiment_id = client.create_experiment(experiment_name)
-    except:
-        experiment_id = client.get_experiment_by_name(experiment_name).experiment_id
+
     return experiment_id
+
 
 def set_experiment(experiment_name):
     """Same as `mlflow.set_experiment` but also returns the experiment id.
@@ -156,18 +158,22 @@ def set_load(run_id, stages='all'):
         raise Exception("`mlflowhelper.set_load` can only be called within a run started my `mlflowhelper.start_run`")
     _artifact_manager.set_load(run_id, stages)
 
+
 def get_loading_information():
     """Get logging information of active run. TODO: Should probably moved to `ArtifactManager`"""
     if _artifact_manager is None:
-        raise Exception("`mlflowhelper.get_loading_information` can only be called within a run started my `mlflowhelper.start_run`")
+        raise Exception("""`mlflowhelper.get_loading_information` can only be
+            called within a run started my `mlflowhelper.start_run`""")
     return {
         "experiment_id": mlflow.active_run().info.experiment_id,
         "run_id": _artifact_manager.run_id
     }
 
+
 def get_artifact_manager():
     """Get artifact manager for active run."""
     return _artifact_manager
+
 
 def set_skip_log(stages='all'):
     """Set stages for which logging should be skipped.
@@ -177,8 +183,10 @@ def set_skip_log(stages='all'):
     stages: str or list[str], optional, default: 'all'
     """
     if _artifact_manager is None:
-        raise Exception("`mlflowhelper.set_skip_log` can only be called within a run started my `mlflowhelper.start_run`")
+        raise Exception(
+            "`mlflowhelper.set_skip_log` can only be called within a run started my `mlflowhelper.start_run`")
     _artifact_manager.set_skip_log(stages)
+
 
 def managed_artifact(
         file_path,
@@ -193,6 +201,7 @@ def managed_artifact(
     ----------
     file_path: str
         local path of the artifact relative to the path used by the responsible ArtifactManager
+    artifact_path: str
     stage: str, optional, default: None
         name of the stage used to configure loading and logging behavior
     load: bool, optional, default: None
@@ -200,7 +209,8 @@ def managed_artifact(
     skip_log: bool, optional, default: None
         whether the artifact should be logged; If not `None` this overwrites settings in the ArtifactManager.
     delete: bool, optional, default: None
-        whether the artifact should be deleted after it was logged; If not `None` this overwrites settings in the ArtifactManager.
+        whether the artifact should be deleted after it was logged;
+        If not `None` this overwrites settings in the ArtifactManager.
 
 
     Returns
@@ -233,7 +243,8 @@ def managed_artifact(
     >>> import pandas as pd
     >>>
     >>> with mlflowhelper.start_run():
-    >>>     mlflowhelper.set_load(run_id="e1363f760b1e4ab3a9e93f856f2e9341", stages=["load_data"]) # activate loading from previous run
+    >>>     # activate loading from previous run
+    >>>     mlflowhelper.set_load(run_id="e1363f760b1e4ab3a9e93f856f2e9341", stages=["load_data"])
     >>>     with mlflowhelper.managed_artifact("data.csv", stage="load_data") as artifact:
     >>>         if artifact.loaded:
     >>>             # load artifact
@@ -244,7 +255,8 @@ def managed_artifact(
     >>>             data.to_csv(artifact.get_path())
     """
     if _artifact_manager is None:
-        raise Exception("`mlflowhelper.managed_artifact` can only be called within a run started my `mlflowhelper.start_run`")
+        raise Exception(
+            "`mlflowhelper.managed_artifact` can only be called within a run started my `mlflowhelper.start_run`")
     return _artifact_manager.managed_artifact(
             file_path,
             artifact_path=artifact_path,
@@ -252,6 +264,7 @@ def managed_artifact(
             load=load,
             skip_log=skip_log,
             delete=delete)
+
 
 def managed_artifact_dir(
         dir_path,
@@ -272,7 +285,8 @@ def managed_artifact_dir(
     skip_log: bool, optional, default: None
         whether the artifact directory should be logged; If not `None` this overwrites settings in the ArtifactManager.
     delete: bool, optional, default: None
-        whether the artifact directory should be deleted after it was logged; If not `None` this overwrites settings in the ArtifactManager.
+        whether the artifact directory should be deleted after it was logged;
+        If not `None` this overwrites settings in the ArtifactManager.
 
     Returns
     -------
@@ -306,11 +320,12 @@ def managed_artifact_dir(
     >>> import pandas as pd
     >>>
     >>> with mlflowhelper.start_run():
-    >>>     mlflowhelper.set_load(run_id="e1363f760b1e4ab3a9e93f856f2e9341", stages=["load_data"]) # activate loading from previous run
+    >>>     # activate loading from previous run
+    >>>     mlflowhelper.set_load(run_id="e1363f760b1e4ab3a9e93f856f2e9341", stages=["load_data"])
     >>>     with mlflowhelper.managed_artifact_dir("data", stage="load_data") as artifact_dir:
     >>>         train_path = artifact_dir.get_path("test.csv")
     >>>         test_path = artifact_dir.get_path("train.csv")
-    >>>         if artifact.loaded:
+    >>>         if artifact_dir.loaded:
     >>>             # load artifacts
     >>>             train = pd.read_csv(train_path)
     >>>             test = pd.read_csv(test_path)
@@ -323,13 +338,15 @@ def managed_artifact_dir(
     >>>             test.to_csv(test_path)
     """
     if _artifact_manager is None:
-        raise Exception("`mlflowhelper.managed_artifacts` can only be called within a run started my `mlflowhelper.start_run`")
+        raise Exception(
+            "`mlflowhelper.managed_artifacts` can only be called within a run started my `mlflowhelper.start_run`")
     return _artifact_manager.managed_artifact_dir(
             dir_path,
             stage=stage,
             load=load,
             skip_log=skip_log,
             delete=delete)
+
 
 def log_vars(
         include=None, exclude=None,
@@ -377,11 +394,11 @@ def log_vars(
             args[arg] = arg_info.locals[arg]
 
     if include_kwargs and arg_info.keywords is not None:
-        for k,v in arg_info.locals[arg_info.keywords].items():
+        for k, v in arg_info.locals[arg_info.keywords].items():
             args[k] = v
 
     if include_varargs is not None and arg_info.varargs is not None:
-        for i,v in enumerate(arg_info.locals[arg_info.varargs]):
+        for i, v in enumerate(arg_info.locals[arg_info.varargs]):
             args["{}{}".format(varargs_prefix, i)] = v
 
     if include_locals:
@@ -391,13 +408,13 @@ def log_vars(
         if arg_info.keywords is not None:
             skip.append(arg_info.keywords)
 
-        for k,v in arg_info.locals.items():
+        for k, v in arg_info.locals.items():
             if k not in skip:
                 args[k] = v
 
     if include is not None:
         exclude = []
-        for k,v in args.items():
+        for k, v in args.items():
             if k not in include:
                 exclude.append(k)
 
@@ -407,8 +424,8 @@ def log_vars(
 
     if verbose:
         print("mlflowhelper: Logging variables:")
-        for k,v in args.items():
-            print("  * {}={}".format(k,v))
+        for k, v in args.items():
+            print("  * {}={}".format(k, v))
 
     mlflow.log_params(args)
     return args
@@ -469,7 +486,8 @@ class ManagedResource(object):
                 return path
         else:
             if file_path is not None:
-                raise Exception("`file_path` parameter must be `None` for a file resource. You specified: {}".format(file_path))
+                raise Exception(
+                    "`file_path` parameter must be `None` for a file resource. You specified: {}".format(file_path))
             else:
                 return self._path
 
@@ -545,7 +563,7 @@ class ArtifactManager(object):
             stages = [stages]
 
         if self.run_id is not None and self.stages_load is not None:
-            return self.stages_load == 'all' or all([ stage in self.stages_load for stage in stages ])
+            return self.stages_load == 'all' or all([stage in self.stages_load for stage in stages])
         else:
             return False
 
@@ -630,7 +648,6 @@ class ArtifactManager(object):
             if delete:
                 os.remove(tmp_file)
 
-
     @contextmanager
     def managed_artifact_dir(
             self,
@@ -690,7 +707,7 @@ class ArtifactManager(object):
                 shutil.rmtree(tmp_dir)
 
 
-class ActiveRunWrapper():
+class ActiveRunWrapper:
     """Wraps an `mlflow.ActiveRun` to support artifact management via an `.ArtifactManager`.
     """
 

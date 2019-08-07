@@ -6,8 +6,8 @@ A set of tools for working with *mlflow* (see https://mlflow.org)
 
 * managed artifact logging and **loading**
     * **automatic** artifact logging and cleanup
-    * **no overwriting files** when running scripts in parallel 
-    * **loading** artifact 
+    * **no overwriting files** when running scripts in parallel
+    * **loading** artifact
     * **central configuration** of logging and loading behavior
 * log **all** function parameters and locals with a simple call to `mlflowhelper.log_vars()`
 
@@ -29,8 +29,8 @@ with mlflowhelper.start_run():
         fig.savefig(artifact.get_path())
 ```
 This code snippet automatically logs the created artifact (`plot.png`).
-At the same time if will create the artifact in a temporary folder so that you don't have to worry about 
-overwriting it when running your scripts in parallel. 
+At the same time if will create the artifact in a temporary folder so that you don't have to worry about
+overwriting it when running your scripts in parallel.
 By default, this also cleans up the artifact and the temporary folder after logging.
 
 You can also manage artifacts on a directory level:
@@ -40,7 +40,7 @@ import mlflowhelper
 
 with mlflowhelper.start_run():
     with mlflowhelper.managed_artifact_dir("plots") as artifact_dir:
-    
+
         # plot 1
         fig = plt.figure()
         plt.plot([1,2,3], [1,2,3])
@@ -53,7 +53,7 @@ with mlflowhelper.start_run():
 ```
 
 #### Artifact loading
-You may want to run experiments but reuse some precomputed artifact from a different run (such 
+You may want to run experiments but reuse some precomputed artifact from a different run (such
 as preprocessed data, trained models, etc.). This can be done as follows:
 ```python
 import mlflowhelper
@@ -104,10 +104,10 @@ import mlflowhelper
 import pandas as pd
 
 with mlflowhelper.start_run():
-    
+
     # activate loading the stage `load_data` from previous run `e1363f760b1e4ab3a9e93f856f2e9341`
     mlflowhelper.set_load(run_id="e1363f760b1e4ab3a9e93f856f2e9341", stages=["load_data"])
-    
+
     # deactivate logging the stage `load_data`, in this case for example because it was loaded from a previous run
     mlflowhelper.set_skip_log(stages=["load_data"])
 
@@ -125,7 +125,7 @@ with mlflowhelper.start_run():
             # save artifacts
             train.to_csv(train_path)
             test.to_csv(test_path)
-``` 
+```
 
 **Note:** For central managing the `stage` parameter must be set in `mlflowhelper.managed_artifact(_dir)`.
 
