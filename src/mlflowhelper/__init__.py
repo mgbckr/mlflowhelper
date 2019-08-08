@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 from pkg_resources import DistributionNotFound, get_distribution
 
-from .tracking import (get_loading_information, log_vars, managed_artifact,
-                       managed_artifact_dir, set_experiment, set_load,
-                       set_skip_log, set_tracking_uri, start_run)
+from .tracking.fluent import (get_loading_information, log_vars,
+                              managed_artifact, managed_artifact_dir,
+                              set_experiment, set_load, set_skip_log,
+                              set_tracking_uri, start_run)
 
 __all__ = [
     "get_loading_information", "get_loading_information", "log_vars", "managed_artifact",
