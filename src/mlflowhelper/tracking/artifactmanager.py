@@ -24,6 +24,8 @@ class ArtifactManager(object):
 
         if client is None:
             self.client = mlflow.tracking.MlflowClient()
+        else:
+            self.client = client
 
         self.tmp_dir = tmp_dir
         self.delete_tmp_dir = delete_tmp_dir
