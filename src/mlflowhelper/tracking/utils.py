@@ -78,7 +78,7 @@ def get_run_tree(client, run_id, include_runs=True, verbose=0):
     return tree
 
 
-def get_run_stage(client, experiment_id, stage, recursive=False, finished=True, verbose=0):
+def get_stage(client, experiment_id, stage, recursive=False, finished=True, verbose=0):
     """
     Loads all runs of a stage based on the tag `stage`. This method can either return a list of runs or a dict
     of trees based on the parent-tree structure of the stage.
