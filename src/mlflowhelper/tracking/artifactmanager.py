@@ -68,10 +68,12 @@ class ArtifactManager(object):
 
     def set_skip_log(self, stages='all'):
         self.stages_skip_log = stages
+        return self
 
     def set_load(self, run_id, stages='all'):
         self.run_id = run_id
         self.stages_load = stages
+        return self
 
     def will_load_stages(self, stages):
 

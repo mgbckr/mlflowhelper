@@ -1,162 +1,249 @@
 import warnings
 
 
-def list_run_tree(client, run_id, verbose=0):
+def flatten_tree_depth_first(tree, exclude=None, exclude_children=False, return_only_run_id=False):
     """
-    Returns a list of `run_id`s based on a depth-first traversal of a run tree. See: #get_run_tree
+    Flatten a run tree in a depth-first manner. May return a list of run ids or runs.
+
+    :param tree: dict
+        The tree to flatten
+    :param exclude:
+        A function to exclude nodes
+    :param exclude_children:
+        Whether to exclude children of excluded nodes
+    :param return_only_run_id:
+        Whether to return only ids
+    :return: list
+        list of runs or run ids
+    """
+
+    if exclude is None:
+        def exclude(run):
+            return False
+
+    run_list = []
+
+    def traverse(parent_id, parent_wrapper):
+
+        if not (exclude_children and exclude(parent_wrapper["run"])):
+            for child_id, child_wrapper in parent_wrapper["children"].items():
+                traverse(child_id, child_wrapper)
+
+        if not exclude(parent_wrapper["run"]):
+            if return_only_run_id:
+                run_list.append(parent_id)
+            else:
+                run_list.append(parent_wrapper["run"])
+
+    for run_id, run_wrapper in tree.items():
+        traverse(run_id, run_wrapper)
+
+    return run_list
+
+
+def build_tree(runs, only_finished=True, return_all_nodes=False, return_new_nodes=False, parent_tag="parent"):
+    """
+    Builds a tree based on the given runs.
+    The parent/child structure is based on a customizable `parent` tag which contains the parent's `run_id`.
+
+    :param runs:
+        The runs to build the tree from
+    :param only_finished:
+        Whether to only keep FINISHED runs
+    :param return_all_nodes:
+        Whether to return a flat `dict` with all runs
+    :param return_new_nodes:
+        Whether to return the new runs added to optionally given data structures
+    :param parent_tag: str
+        The tag to base the parent/child relation on
+    :return: dict or list[dict]
+        tree | tree(,all_nodes)(,new_nodes)
+    """
+
+    root_nodes, all_nodes, new_nodes = _build_tree_add_runs_to_data_structures(
+        runs,
+        only_finished=only_finished,
+        parent_tag=parent_tag)
+
+    return_vars = [root_nodes]
+    if return_all_nodes:
+        return_vars.append(all_nodes)
+    if return_new_nodes:
+        return_vars.append(new_nodes)
+
+    if return_all_nodes or return_new_nodes:
+        return return_vars
+    else:
+        return root_nodes
+
+
+def _build_tree_add_runs_to_data_structures(
+        runs,
+        root_nodes=None,
+        all_nodes=None,
+        new_nodes=None,
+        only_finished=True,
+        parent_tag="parent"):
+
+    if root_nodes is None:
+        root_nodes = {}
+    if all_nodes is None:
+        all_nodes = {}
+    if new_nodes is None:
+        new_nodes = {}
+
+    if not isinstance(runs, list):
+        runs = [runs]
+
+    for run in runs:
+        run_id = run.info.run_id
+        if run_id not in all_nodes:
+            if not only_finished or run.info.status == "FINISHED":
+                run_wrapper = {
+                    "run": run,
+                    "children": {}
+                }
+                all_nodes[run_id] = run_wrapper
+                root_nodes[run_id] = run_wrapper
+                new_nodes[run_id] = run_wrapper
+
+    for run_id in [r for r in root_nodes.keys()]:
+        run_wrapper = root_nodes[run_id]
+        tags = run_wrapper["run"].data.tags
+        if parent_tag in tags:
+            parent_id = tags[parent_tag]
+            if parent_id in all_nodes:
+                all_nodes[parent_id]["children"][run_id] = run_wrapper
+                del root_nodes[run_id]
+
+    return root_nodes, all_nodes, new_nodes
+
+
+def get_children_recursively(
+        client, runs, experiment_ids=None, filter_string=None, only_finished=True, parent_tag="parent", verbose=0):
+    """
+    Loads all children runs of the given set of runs and puts them in a tree.
+    The parent/child structure is based on a customizable `parent` tag which contains the parent's `run_id`.
 
     :param client: mlflow.tracking.MlflowClient
         The MlflowClient to use
-    :param run_id: str
-        The `run_id` of the root run
-    :param verbose:
-        `verbose=1` prints a detailed progress report
-    :return: list[str]
-    """
-    tree = get_run_tree(client, run_id, include_runs=False, verbose=verbose)
-    run_id_list = []
-
-    def traverse(run_id, node):
-        for child_id, child in node["children"].items():
-            traverse(child_id, child)
-        run_id_list.append(run_id)
-
-    traverse(*list(tree.items())[0])
-    return run_id_list
-
-
-def get_run_tree(client, run_id, include_runs=True, verbose=0):
-    """
-    Loads a tree of runs. The parent/child relationship is based on the `parent` tag in child runs which holds the
-    parent's `run_id`.
-
-    :param client: mlflow.tracking.MlflowClient
-        The MlflowClient to use
-    :param run_id: str
-        The `run_id` of the root run
-    :param include_runs:
-        Whether to include the run objects
-    :param verbose:
-        `verbose=1` prints a detailed progress report
-    :return: dict
-         A `dict` representing the run tree `{"<run_id>: {"run": <run object>, "children":{ ... }}"}`
-    """
-
-    run = client.get_run(run_id)
-    exp_id = run.info.experiment_id
-
-    if verbose > 0:
-        print("Collecting run tree:")
-        print("*", f"{run.info.run_id} ({run.data.tags['stage']})" if "stage" in run.data.tags else run.info.run_id)
-
-    run_dict = {
-        "run": run if include_runs else None,
-        "children": {}
-    }
-    tree = {run_id: run_dict}
-
-    def collect_children(parent_id, parent_dict, level=1):
-
-        # recursion
-        children = list(client.search_runs(exp_id, filter_string=f"tags.parent='{parent_id}'"))
-        for i, child in enumerate(children):
-
-            if verbose > 0:
-                run_desc = f"{child.info.run_id} ({child.data.tags['stage']})" \
-                    if "stage" in child.data.tags else child.info.run_id
-                print("  " * level, "*", f"{i + 1}/{len(children)}:", run_desc)
-
-            child_dict = {
-                "run": child if include_runs else None,
-                "children": {}
-            }
-            parent_dict["children"][child.info.run_id] = child_dict
-
-            collect_children(child.info.run_id, child_dict, level=level + 1)
-
-    collect_children(run_id, run_dict)
-    return tree
-
-
-def get_stage(client, experiment_id, stage, recursive=False, finished=True, verbose=0):
-    """
-    Loads all runs of a stage based on the tag `stage`. This method can either return a list of runs or a dict
-    of trees based on the parent-tree structure of the stage.
-
-    :param client: mlflow.tracking.MlflowClient
-        The MlflowClient to use
-    :param experiment_id: str
-        Id of the experiment holding the stage
-    :param stage: str
-        Name of the stage
-    :param recursive:
-        Whether to load a list of runs (`recursive=False`) or a dict with the parent-tree structure
-    :param finished:
-        Whether to load only finished runs
+    :param runs:
+        Runs to collect parents for
+    :param experiment_ids: str or list[str]
+        The ids of the experiments to search for children in
+    :param filter_string: str
+        Filter string used to search for children
+    :param only_finished:
+        Whether to process only finished runs
+    :param parent_tag: str
+        The parent tag to use for the parent/child relation
     :param verbose:
         `verbose=1` prints a detailed progress report
     :return:
         Either a list of runs (`recursive=False`) or a dict with the parent-tree structure
     """
 
-    if verbose > 0:
-        print(f"Start loading stage: '{stage}'")
+    if not isinstance(runs, list):
+        runs = [runs]
 
-    runs_stage = client.search_runs(experiment_id, f"tags.stage='{stage}'")
+    new_nodes = {}
+    all_nodes = {}
+    root_nodes = {}
 
-    if verbose > 0:
-        print(f"Done loading stage: '{stage}'")
+    _build_tree_add_runs_to_data_structures(
+        runs, root_nodes, all_nodes, new_nodes, only_finished=only_finished)
 
-    if not recursive:
-        return [r for r in runs_stage if not finished or r.info.status == "FINISHED"]
-    else:
+    if experiment_ids is None:
+        experiment_ids = set([w["run"].info.experiment_id for w in all_nodes.values()])
 
-        print(f"Loading tree")
+    level = 0
+    while len(new_nodes) > 0:
+        if verbose > 0:
+            print(f"Processing level {level}: {len(new_nodes)} nodes")
 
-        def build_tree(children_dict):
+        parent_nodes = new_nodes
+        new_nodes = {}
+        for run_id, run_wrapper in parent_nodes.items():
 
-            # build level dict
-            level_dict = {}
-            for child_id, child_dict in children_dict.items():
-                if "parent" in child_dict["run"].data.tags:
-                    # get or set parent dict
-                    parent_dict = level_dict.setdefault(
-                        child_dict["run"].data.tags["parent"],
-                        {"run": None, "children": {}})
+            if verbose > 0:
+                print(f"* querying children for {run_id} ... ", end="")
 
-                    # add child to parent dict
-                    parent_dict["children"][child_dict["run"].info.run_id] = child_dict
+            children_filter_string = f"tags.{parent_tag}='{run_id}'"
+            if filter_string is not None:
+                children_filter_string += f" AND {filter_string}"
 
-            #                 elif child_dict is not None:
-            #                     raise Exception(f"Missing parent tag for '{r.info.run_id}'")
-            #                 else:
-            #                     break
+            children = client.search_runs(experiment_ids, filter_string=children_filter_string)
+            if verbose > 0:
+                print(f"found: {len(children)}")
 
-            # recurse
-            if len(level_dict) == 0:
+            _build_tree_add_runs_to_data_structures(
+                children, root_nodes, all_nodes, new_nodes, only_finished=only_finished)
 
-                return children_dict
+        level += 1
 
-            else:
-
-                # get parent runs
-                parent_runs = [client.get_run(parent_id) for parent_id in level_dict.keys()]
-
-                # filter parent runs if applicable
-                if finished:
-                    parent_runs = [r for r in parent_runs if r.info.status == "FINISHED"]
-
-                # set parent runs:
-                for r in parent_runs:
-                    level_dict[r.info.run_id]["run"] = r
-
-                # recurse
-                return build_tree(level_dict)
-
-        return build_tree({r.info.run_id: {"run": r, "childen": {}} for r in runs_stage})
+    return root_nodes
 
 
-def delete_run_recursively(client, run_id, dry_run=True, verbose=0):
+def get_parents_recursively(client, runs, only_finished=True, parent_tag="parent", verbose=0):
+    """
+    Loads all parent runs of the given set of runs and puts them in a tree.
+    The parent structure is based on a customizable `parent` tag which contains the parent's `run_id`.
+
+    :param client: mlflow.tracking.MlflowClient
+        The MlflowClient to use
+    :param runs:
+        Runs to collect parents for
+    :param only_finished:
+        Whether to process only finished runs
+    :param parent_tag: str
+        The parent tag to use for the parent/child relation
+    :param verbose:
+        `verbose=1` prints a detailed progress report
+    :return:
+        Either a list of runs (`recursive=False`) or a dict with the parent-tree structure
+    """
+
+    if not isinstance(runs, list):
+        runs = [runs]
+
+    new_nodes = {}
+    all_nodes = {}
+    root_nodes = {}
+
+    _build_tree_add_runs_to_data_structures(
+        runs, root_nodes, all_nodes, new_nodes, only_finished=only_finished)
+
+    level = 0
+    while len(new_nodes) > 0:
+        if verbose > 0:
+            print(f"Processing level {level}: {len(new_nodes)} nodes")
+
+        child_nodes = new_nodes
+        new_nodes = {}
+        parents = []
+
+        if verbose > 0:
+            print(f"* collecting parents for child nodes: {len(child_nodes)}")
+
+        for run_id, run_wrapper in child_nodes.items():
+
+            tags = run_wrapper["run"].data.tags
+            if "parent" in tags:
+                parent = client.get_run(tags[parent_tag])
+                parents.append(parent)
+
+        if verbose > 0:
+            print(f"* found parents: {len(parents)}")
+
+        _build_tree_add_runs_to_data_structures(
+            parents, root_nodes, all_nodes, new_nodes, only_finished=only_finished)
+
+        level -= 1
+
+    return root_nodes
+
+
+def delete_run_recursively(client, run_id, experiment_ids=None, dry_run=True, verbose=0):
     """
     Deletes a run and all it's children. For this function, the parent/children relationship is defined
     by the tag `parent` in child runs. The value of the `parent` tag is the `run_id` of the parent.
@@ -176,7 +263,12 @@ def delete_run_recursively(client, run_id, dry_run=True, verbose=0):
     if dry_run:
         warnings.warn("Dry run: nothing is deleted! Set `dry_run=False` to actually delete things.")
 
-    ids_to_delete = list_run_tree(client, run_id, verbose=verbose)
+    tree = get_children_recursively(
+        client,
+        client.get_run(run_id),
+        experiment_ids=experiment_ids,
+        verbose=verbose)
+    ids_to_delete = flatten_tree_depth_first(tree, return_only_run_id=True)
 
     ids_deleted = []
     if not dry_run:
