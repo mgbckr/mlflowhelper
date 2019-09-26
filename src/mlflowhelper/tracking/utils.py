@@ -252,6 +252,8 @@ def delete_run_recursively(client, run_id, experiment_ids=None, dry_run=True, ve
         The MlflowClient to use
     :param run_id: str
         The run id to delete
+    :param experiment_ids: list[str]
+        Ids of experiment in which to search for runs
     :param dry_run:
         Whether to do a dry run (instead of deleting)
     :param verbose:
