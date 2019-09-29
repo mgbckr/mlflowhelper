@@ -1,7 +1,7 @@
 import warnings
 
 
-def flatten_tree_depth_first(tree, exclude=None, exclude_children=False, return_only_run_id=False):
+def flatten_tree_depth_first(tree, exclude=None, exclude_children=False, return_only_run_id=False, return_trace=False):
     """
     Flatten a run tree in a depth-first manner. May return a list of run ids or runs.
 
@@ -9,12 +9,14 @@ def flatten_tree_depth_first(tree, exclude=None, exclude_children=False, return_
         The tree to flatten
     :param exclude:
         A function to exclude nodes
-    :param exclude_children:
+    :param exclude_children: bool
         Whether to exclude children of excluded nodes
-    :param return_only_run_id:
+    :param return_only_run_id: bool
         Whether to return only ids
+    :param return_trace: bool
+        Whether to return a run id trace for each listed run
     :return: list
-        list of runs or run ids
+        list of runs or run ids or tuples (run id trace, run_id|run)
     """
 
     if exclude is None:
@@ -23,20 +25,21 @@ def flatten_tree_depth_first(tree, exclude=None, exclude_children=False, return_
 
     run_list = []
 
-    def traverse(parent_id, parent_wrapper):
+    def traverse(trace, parent_id, parent_wrapper):
 
         if not (exclude_children and exclude(parent_wrapper["run"])):
             for child_id, child_wrapper in parent_wrapper["children"].items():
-                traverse(child_id, child_wrapper)
+                traverse(trace + [parent_id], child_id, child_wrapper)
 
         if not exclude(parent_wrapper["run"]):
-            if return_only_run_id:
-                run_list.append(parent_id)
+            entity = parent_id if return_only_run_id else parent_wrapper["run"]
+            if return_trace:
+                run_list.append((trace + [parent_id], entity))
             else:
-                run_list.append(parent_wrapper["run"])
+                run_list.append(entity)
 
     for run_id, run_wrapper in tree.items():
-        traverse(run_id, run_wrapper)
+        traverse([], run_id, run_wrapper)
 
     return run_list
 
