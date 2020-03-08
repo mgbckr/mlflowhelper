@@ -6,6 +6,67 @@ from contextlib import contextmanager
 import mlflow
 
 
+class ManagedResource(object):
+
+    def __init__(self, path, loaded, skip_log, is_dir, manager):
+        """
+
+        Parameters
+        ----------
+        path: str
+            The path of the resource
+        loaded: bool
+            Whether the resource will be loaded
+        skip_log: bool
+            Whether the resource will belogged
+        is_dir: bool
+            Whether the resource is a directory
+        manager: ArtifactManager
+            The ArtifactManager responsible for the resource
+        """
+        self._path = path
+        self.loaded = loaded
+        self.skip_log = skip_log
+        self.is_dir = is_dir
+        self.manager = manager
+
+    def get_path(self, file_path=None):
+        """
+        Get local path of the current resource.
+        If the resource is a directory, a relative `file_path` (relative to the managed directory)
+        can be specified to get an absolute path to the file.
+
+        Parameters
+        ----------
+        file_path: str, optional, default: None
+
+        Returns
+        -------
+        str
+            The absolute path to the specified resource.
+            If this managed resource is a file, then the file path is returned.
+            If this managed resource is a directory and the `file_path` parameter is `None`.
+            then the path to this dorectory is returned.
+            And if this managed resource is a directory and the `file_path` parameter is not `None`,
+            then the absolute path to that file is given, i.e., `<resource path>/<file_path>`.
+
+        """
+
+        if self.is_dir:
+            if file_path is None:
+                return self._path
+            else:
+                path = os.path.join(self._path, file_path)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                return path
+        else:
+            if file_path is not None:
+                raise Exception(
+                    "`file_path` parameter must be `None` for a file resource. You specified: {}".format(file_path))
+            else:
+                return self._path
+
+
 class ArtifactManager(object):
 
     def __init__(
@@ -81,9 +142,7 @@ class ArtifactManager(object):
         if isinstance(stages, str):
             stages = [stages]
 
-        if self.src_run_id_default is not None:
-            return True
-        elif self.src_run_id_stages is not None:
+        if self.src_run_id_stages is not None:
             return all([stage in self.src_run_id_stages and self.src_run_id_stages[stage] is not None
                         for stage in stages])
         else:
@@ -141,7 +200,7 @@ class ArtifactManager(object):
             src_run_id=None,
             dst_run_id=None,
             skip_log=None,
-            delete=None):
+            delete=None) -> ManagedResource:
         """
 
         Parameters
@@ -200,7 +259,7 @@ class ArtifactManager(object):
             src_run_id=None,
             dst_run_id=None,
             skip_log=None,
-            delete=None):
+            delete=None) -> ManagedResource:
         """
 
         Parameters
@@ -239,7 +298,7 @@ class ArtifactManager(object):
             # prefix/last_dir to dst_path/last_dir ... this may actually be due to a missing trailing slash?
             # I have to test this eventually ... for now we strip those strip slashes!
             self.client.download_artifacts(
-                self.src_run_id_default,
+                src_run_id,
                 path=dir_path,
                 dst_path=os.path.join(*os.path.split(tmp_dir)[:-1]))
 
@@ -252,67 +311,6 @@ class ArtifactManager(object):
                 self.client.log_artifacts(run_id, tmp_dir, artifact_path=dir_path)
             if delete:
                 shutil.rmtree(tmp_dir)
-
-
-class ManagedResource(object):
-
-    def __init__(self, path, loaded, skip_log, is_dir, manager):
-        """
-
-        Parameters
-        ----------
-        path: str
-            The path of the resource
-        loaded: bool
-            Whether the resource will be loaded
-        skip_log: bool
-            Whether the resource will belogged
-        is_dir: bool
-            Whether the resource is a directory
-        manager: ArtifactManager
-            The ArtifactManager responsible for the resource
-        """
-        self._path = path
-        self.loaded = loaded
-        self.skip_log = skip_log
-        self.is_dir = is_dir
-        self.manager = manager
-
-    def get_path(self, file_path=None):
-        """
-        Get local path of the current resource.
-        If the resource is a directory, a relative `file_path` (relative to the managed directory)
-        can be specified to get an absolute path to the file.
-
-        Parameters
-        ----------
-        file_path: str, optional, default: None
-
-        Returns
-        -------
-        str
-            The absolute path to the specified resource.
-            If this managed resource is a file, then the file path is returned.
-            If this managed resource is a directory and the `file_path` parameter is `None`.
-            then the path to this dorectory is returned.
-            And if this managed resource is a directory and the `file_path` parameter is not `None`,
-            then the absolute path to that file is given, i.e., `<resource path>/<file_path>`.
-
-        """
-
-        if self.is_dir:
-            if file_path is None:
-                return self._path
-            else:
-                path = os.path.join(self._path, file_path)
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                return path
-        else:
-            if file_path is not None:
-                raise Exception(
-                    "`file_path` parameter must be `None` for a file resource. You specified: {}".format(file_path))
-            else:
-                return self._path
 
 
 class ActiveRunWrapper:
