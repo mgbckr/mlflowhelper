@@ -1,8 +1,12 @@
 import collections.abc
 import pickle
+import typing
+import warnings
 from typing import Iterator
 
 import mlflow
+import mlflow.store.tracking
+import mlflow.utils.mlflow_tags
 import mlflowhelper.tracking.artifactmanager
 
 DICT_IDENTIFIER = "mlflow.tracking.collections.MlflowDict"
@@ -15,30 +19,30 @@ class MlflowDict(collections.abc.MutableMapping):
 
     def __init__(
             self,
-            mlfow_client: mlflow.tracking.client.MlflowClient = None,
+            mlflow_client: typing.Union[mlflow.tracking.client.MlflowClient, str] = None,
             mlflow_experiment_name="dict_db",
-            mlflow_tag_context="default",
+            mlflow_tag_dict_name="default",
+            mlflow_tag_user=None,
             mlflow_tag_defaults=None,
+            mlflow_tag_name_separator=": ",
             mlflow_tag_prefix="_mlflowdict",
             local_cache=True,
             lazy_cache=True):
 
-        if mlfow_client is None:
+        if mlflow_client is None:
             self.client = mlflow.tracking.MlflowClient()
+        elif isinstance(mlflow_client, str):
+            self.client = mlflow.tracking.MlflowClient(tracking_uri=mlflow_client)
         else:
-            self.client = mlfow_client
+            self.client = mlflow_client
         self.artifact_manager = mlflowhelper.tracking.artifactmanager.ArtifactManager(self.client)
 
         # tags
-        self.mlflow_tag_context = mlflow_tag_context
+        self.mlflow_tag_dict_name = mlflow_tag_dict_name
+        self.mlflow_tag_user = mlflow_tag_user
         self.mlflow_tag_defaults = mlflow_tag_defaults
         self.mlflow_tag_prefix = mlflow_tag_prefix
-
-        # caching
-        self.local_cache = local_cache
-        self.lazy_cache = lazy_cache
-        self.local_all_keys = None
-        self.local_data = dict()
+        self.mlflow_tag_name_separator = mlflow_tag_name_separator
 
         # create experiment if it does not exist
         exp = self.client.get_experiment_by_name(mlflow_experiment_name)
@@ -47,15 +51,19 @@ class MlflowDict(collections.abc.MutableMapping):
             exp = self.client.get_experiment_by_name(mlflow_experiment_name)
         self.experiment = exp
 
-        # init
-        self._init_keys()
+        # caching
+        self.local_cache = local_cache
+        self.lazy_cache = lazy_cache
+        self.local_all_keys = set(
+            v.data.tags[f"{self.mlflow_tag_prefix}._key"] for v in self._get_all_runs())
         if not lazy_cache:
             self._init_data()
+        else:
+            self.local_data = dict()
 
-    def _init_keys(self):
-        if self.local_all_keys is None:
-            self.local_all_keys = set(
-                v.data.tags[f"{self.mlflow_tag_prefix}._key"] for v in self._get_all_runs())
+        # check whether dict exists (initialized )
+        if len(self.local_all_keys) > 0:
+            warnings.warn("Dict already exists")
 
     def _init_data(self):
         self.local_data = dict(self._get_all_data())
@@ -75,10 +83,21 @@ class MlflowDict(collections.abc.MutableMapping):
         # set required tags
         self.client.set_tag(
             run.info.run_id, f"{self.mlflow_tag_prefix}._class", DICT_IDENTIFIER)
-        self.client.set_tag(run.info.run_id, f"{self.mlflow_tag_prefix}._context", self.mlflow_tag_context)
+        self.client.set_tag(run.info.run_id, f"{self.mlflow_tag_prefix}._name", self.mlflow_tag_dict_name)
         self.client.set_tag(run.info.run_id, f"{self.mlflow_tag_prefix}._key", key)
 
         # set other tags
+        self.client.set_tag(
+            run.info.run_id,
+            mlflow.utils.mlflow_tags.MLFLOW_RUN_NAME,
+            f"{self.mlflow_tag_dict_name}{self.mlflow_tag_name_separator}{key}")
+        self.client.set_tag(
+            run.info.run_id,
+            mlflow.utils.mlflow_tags.MLFLOW_USER,
+            f"{self.mlflow_tag_user}")
+        if self.mlflow_tag_defaults is not None:
+            for tag, value in self.mlflow_tag_defaults:
+                self.client.set_tag(run.info.run_id, tag, value)
         if self.mlflow_tag_defaults is not None:
             for tag, value in self.mlflow_tag_defaults:
                 self.client.set_tag(run.info.run_id, tag, value)
@@ -96,14 +115,14 @@ class MlflowDict(collections.abc.MutableMapping):
         return self.client.search_runs(
             self.experiment.experiment_id,
             filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
-                          f"AND tags.`{self.mlflow_tag_prefix}._context`='{self.mlflow_tag_context}' "
+                          f"AND tags.`{self.mlflow_tag_prefix}._name`='{self.mlflow_tag_dict_name}' "
                           f"AND tags.`{self.mlflow_tag_prefix}._key`='{name}'")
 
     def _get_all_runs(self):
         return self.client.search_runs(
             self.experiment.experiment_id,
             filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
-                          f"AND tags.`{self.mlflow_tag_prefix}._context`='{self.mlflow_tag_context}'")
+                          f"AND tags.`{self.mlflow_tag_prefix}._name`='{self.mlflow_tag_dict_name}'")
 
     def _load_artifact(self, run_id):
         with self.artifact_manager as afm:
