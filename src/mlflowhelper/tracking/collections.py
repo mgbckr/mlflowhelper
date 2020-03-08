@@ -15,6 +15,7 @@ DICT_IDENTIFIER = "mlflow.tracking.collections.MlflowDict"
 class MlflowDict(collections.abc.MutableMapping):
     """
     TODO: clean up and document
+    TODO: add params and metrics extractor for logging specific information about the values being set
     """
 
     def __init__(
@@ -26,9 +27,11 @@ class MlflowDict(collections.abc.MutableMapping):
             mlflow_tag_defaults=None,
             mlflow_tag_name_separator=": ",
             mlflow_tag_prefix="_mlflowdict",
+            mlflow_logging=None,
             local_cache=True,
             lazy_cache=True):
 
+        # init client
         if mlflow_client is None:
             self.client = mlflow.tracking.MlflowClient()
         elif isinstance(mlflow_client, str):
@@ -37,6 +40,13 @@ class MlflowDict(collections.abc.MutableMapping):
             self.client = mlflow_client
         self.artifact_manager = mlflowhelper.tracking.artifactmanager.ArtifactManager(self.client)
 
+        # create experiment if it does not exist
+        exp = self.client.get_experiment_by_name(mlflow_experiment_name)
+        if exp is None:
+            self.client.create_experiment(mlflow_experiment_name)
+            exp = self.client.get_experiment_by_name(mlflow_experiment_name)
+        self.experiment = exp
+
         # tags
         self.mlflow_tag_dict_name = mlflow_tag_dict_name
         self.mlflow_tag_user = mlflow_tag_user
@@ -44,12 +54,7 @@ class MlflowDict(collections.abc.MutableMapping):
         self.mlflow_tag_prefix = mlflow_tag_prefix
         self.mlflow_tag_name_separator = mlflow_tag_name_separator
 
-        # create experiment if it does not exist
-        exp = self.client.get_experiment_by_name(mlflow_experiment_name)
-        if exp is None:
-            self.client.create_experiment(mlflow_experiment_name)
-            exp = self.client.get_experiment_by_name(mlflow_experiment_name)
-        self.experiment = exp
+        self.mlflow_logging = mlflow_logging
 
         # caching
         self.local_cache = local_cache
@@ -106,6 +111,12 @@ class MlflowDict(collections.abc.MutableMapping):
                 tags = [tags]
             for tag in tags:
                 self.client.set_tag(run.info.run_id, tag, value)
+
+        # custom logging
+        if callable(self.mlflow_logging):
+            self.mlflow_logging(self.client, run.info.run_id, key, value)
+        elif self.mlflow_logging is not None:
+            self.mlflow_logging.log(self.client, run.info.run_id, key, value)
 
     def _del_artifacts(self, name):
         for run in self._get_runs(name):
