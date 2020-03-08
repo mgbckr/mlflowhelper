@@ -5,13 +5,18 @@ from typing import Iterator
 import mlflow
 import mlflowhelper.tracking.artifactmanager
 
+DICT_IDENTIFIER = "mlflow.tracking.collections.MlflowDict"
+
 
 class MlflowDict(collections.abc.MutableMapping):
+    """
+    TODO: clean up and document
+    """
 
     def __init__(
             self,
             mlfow_client: mlflow.tracking.client.MlflowClient = None,
-            mlflow_experiment_name="default",
+            mlflow_experiment_name="dict_db",
             mlflow_tag_context="default",
             mlflow_tag_defaults=None,
             mlflow_tag_prefix="_mlflowdict",
@@ -69,7 +74,7 @@ class MlflowDict(collections.abc.MutableMapping):
 
         # set required tags
         self.client.set_tag(
-            run.info.run_id, f"{self.mlflow_tag_prefix}._class", "mlflow.tracking.collections.MlflowDict")
+            run.info.run_id, f"{self.mlflow_tag_prefix}._class", DICT_IDENTIFIER)
         self.client.set_tag(run.info.run_id, f"{self.mlflow_tag_prefix}._context", self.mlflow_tag_context)
         self.client.set_tag(run.info.run_id, f"{self.mlflow_tag_prefix}._key", key)
 
@@ -90,14 +95,14 @@ class MlflowDict(collections.abc.MutableMapping):
     def _get_runs(self, name):
         return self.client.search_runs(
             self.experiment.experiment_id,
-            filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = 'mlflow.tracking.collections.MlflowDict' "
+            filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
                           f"AND tags.`{self.mlflow_tag_prefix}._context`='{self.mlflow_tag_context}' "
                           f"AND tags.`{self.mlflow_tag_prefix}._key`='{name}'")
 
     def _get_all_runs(self):
         return self.client.search_runs(
             self.experiment.experiment_id,
-            filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = 'mlflow.tracking.collections.MlflowDict' "
+            filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
                           f"AND tags.`{self.mlflow_tag_prefix}._context`='{self.mlflow_tag_context}'")
 
     def _load_artifact(self, run_id):
