@@ -138,15 +138,15 @@ def end_run(status=RunStatus.to_string(RunStatus.FINISHED)):
     mlflow.end_run(status=status)
 
 
-def set_load(run_id, stages='all'):
-    """Set stages that should be loaded from previous run.
+def set_src_run_id(run_id, stages=None):
+    """Set run ids for stages that should be loaded from previous runs.
 
     Parameters
     ----------
-    run_id: str
-        Run id to lead from
-    stages: str or list[str], optional, default: "all"
-        Stages to load
+    run_id: str or None
+        Run id to load from; if `run_id` is `None` the stages will not be loaded anymore
+    stages: list[str], optional, default: None
+        Stages to load; if set to `None` the `run_id` will be set for all stages
 
     Returns
     -------
@@ -154,18 +154,7 @@ def set_load(run_id, stages='all'):
     """
     if _artifact_manager is None:
         raise Exception("`mlflowhelper.set_load` can only be called within a run started my `mlflowhelper.start_run`")
-    _artifact_manager.set_load(run_id, stages)
-
-
-def get_loading_information():
-    """Get logging information of active run. TODO: Should probably moved to `ArtifactManager`"""
-    if _artifact_manager is None:
-        raise Exception("""`mlflowhelper.get_loading_information` can only be
-            called within a run started my `mlflowhelper.start_run`""")
-    return {
-        "experiment_id": mlflow.active_run().info.experiment_id,
-        "run_id": _artifact_manager.run_id
-    }
+    _artifact_manager.set_src_run_id(run_id, stages)
 
 
 def get_artifact_manager():
@@ -183,14 +172,15 @@ def set_skip_log(stages='all'):
     if _artifact_manager is None:
         raise Exception(
             "`mlflowhelper.set_skip_log` can only be called within a run started my `mlflowhelper.start_run`")
-    _artifact_manager.set_skip_log(stages)
+    _artifact_manager.stages_skip_log = stages
 
 
 def managed_artifact(
         file_path,
         artifact_path=None,
         stage=None,
-        load=None,
+        src_run_id=None,
+        dst_run_id=None,
         skip_log=None,
         delete=None):
     """
@@ -202,8 +192,10 @@ def managed_artifact(
     artifact_path: str
     stage: str, optional, default: None
         name of the stage used to configure loading and logging behavior
-    load: bool, optional, default: None
-        whether the artifact should be loaded; If not `None` this overwrites settings in the ArtifactManager.
+    src_run_id: str, optional, default: None
+        if given, the artifact will be loaded from this id independent of the settings in the ArtifactManager
+    dst_run_id: str, optional, default: None
+        if given, the artifact will be logged to this run independent of the current context or ArtifactManager settings
     skip_log: bool, optional, default: None
         whether the artifact should be logged; If not `None` this overwrites settings in the ArtifactManager.
     delete: bool, optional, default: None
@@ -259,7 +251,8 @@ def managed_artifact(
             file_path,
             artifact_path=artifact_path,
             stage=stage,
-            load=load,
+            src_run_id=src_run_id,
+            dst_run_id=dst_run_id,
             skip_log=skip_log,
             delete=delete)
 
@@ -267,7 +260,8 @@ def managed_artifact(
 def managed_artifact_dir(
         dir_path,
         stage=None,
-        load=None,
+        src_run_id=None,
+        dst_run_id=None,
         skip_log=None,
         delete=None):
     """
@@ -278,10 +272,12 @@ def managed_artifact_dir(
         local path of the artifact directory relative to the path used by the responsible ArtifactManager
     stage: str, optional, default: None
         name of the stage used to configure loading and logging behavior
-    load: bool, optional, default: None
-        whether the artifact directory should be loaded; If not `None` this overwrites settings in the ArtifactManager.
+    src_run_id: str, optional, default: None
+        if given, the artifact will be loaded from this id independent of the settings in the ArtifactManager
+    dst_run_id: str, optional, default: None
+        if given, the artifact will be logged to this run independent of the current context or ArtifactManager settings
     skip_log: bool, optional, default: None
-        whether the artifact directory should be logged; If not `None` this overwrites settings in the ArtifactManager.
+        whether the artifact directory should be logged; If not `None` this overwrites settings in the ArtifactManager
     delete: bool, optional, default: None
         whether the artifact directory should be deleted after it was logged;
         If not `None` this overwrites settings in the ArtifactManager.
@@ -341,7 +337,8 @@ def managed_artifact_dir(
     return _artifact_manager.managed_artifact_dir(
             dir_path,
             stage=stage,
-            load=load,
+            src_run_id=src_run_id,
+            dst_run_id=dst_run_id,
             skip_log=skip_log,
             delete=delete)
 
