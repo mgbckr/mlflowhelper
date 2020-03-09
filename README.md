@@ -160,6 +160,20 @@ This will log:
 }
 ```
 
+### Persistent dictionary
+
+*mlflowhelper* provides dictionary-like implementation that persistens elements to MLFlow.
+
+```python
+from mlflowhelper.tracking.collections import MlflowDict
+d = MlflowDict() # you can also provide tracking URI or an MlflowClient
+d["a"] = 5
+del d
+d = MlflowDict() # you can also provide tracking URI or an MlflowClient
+print(d["a"]) # will give you 5
+```
+
+
 
 ### Other
 There are a few more convenience functions included in `mlflowhelper`:
