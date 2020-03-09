@@ -136,6 +136,7 @@ class ArtifactManager(object):
         """
         if self.delete_tmp_dir:
             shutil.rmtree(self.tmp_dir)
+            self.tmp_dir = None
 
     def will_load_stages(self, stages):
 
@@ -246,6 +247,8 @@ class ArtifactManager(object):
             yield ManagedResource(tmp_file, src_run_id is not None, skip_log, is_dir=False, manager=self)
         finally:
             if not skip_log:
+                if not os.path.exists(tmp_file):
+                    raise FileNotFoundError(f"Artifact not found (`{file_path}`). Did you forget to create it?")
                 run_id = ArtifactManager._get_dst_run_id(dst_run_id=dst_run_id)
                 self.client.log_artifact(run_id, tmp_file, artifact_path=artifact_path)
             if delete:
