@@ -9,6 +9,7 @@ import mlflow
 import mlflow.store.tracking
 import mlflow.utils.mlflow_tags
 import mlflowhelper.tracking.artifactmanager
+from mlflow.store.tracking import SEARCH_MAX_RESULTS_THRESHOLD
 
 DICT_IDENTIFIER = "mlflow.tracking.collections.MlflowDict"
 
@@ -93,7 +94,8 @@ class MlflowDict(collections.abc.MutableMapping):
             This can be a function or a class of type `MlflowDict.Logger`.
         :param mlflow_pickler:
             By default MlflowDict uses `pickle` to serialize values. You can provide a custom pickler here.
-            See `MlflowDict.Pickler` for the interface.
+            See `MlflowDict.Pickler` for the interface. If set to `None`, no value will be logged and the result upon
+            retrieving an element from the dict will be `None`.
         :param local_cache:
         :param lazy_cache:
         """
@@ -129,14 +131,13 @@ class MlflowDict(collections.abc.MutableMapping):
         # caching
         self.local_cache = local_cache
         self.lazy_cache = lazy_cache
-        self.local_all_keys = set(
-            v.data.tags[f"{self.mlflow_tag_prefix}._key"] for v in self._get_all_runs())
+        self.local_all_keys = self.update_keys()
         if not lazy_cache:
             self._init_data()
         else:
             self.local_data = dict()
 
-        # check whether dict exists (initialized )
+        # check whether dict exists
         if len(self.local_all_keys) > 0:
             warnings.warn("Dict already exists")
 
@@ -207,13 +208,15 @@ class MlflowDict(collections.abc.MutableMapping):
             self.experiment.experiment_id,
             filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
                           f"AND tags.`{self.mlflow_tag_prefix}._name`='{self.mlflow_tag_dict_name}' "
-                          f"AND tags.`{self.mlflow_tag_prefix}._key`='{name}'")
+                          f"AND tags.`{self.mlflow_tag_prefix}._key`='{name}'",
+            max_results=SEARCH_MAX_RESULTS_THRESHOLD)
 
     def _get_all_runs(self):
         return self.client.search_runs(
             self.experiment.experiment_id,
             filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
-                          f"AND tags.`{self.mlflow_tag_prefix}._name`='{self.mlflow_tag_dict_name}'")
+                          f"AND tags.`{self.mlflow_tag_prefix}._name`='{self.mlflow_tag_dict_name}'",
+            max_results=SEARCH_MAX_RESULTS_THRESHOLD)
 
     def _load_artifact(self, run_id):
         with mlflowhelper.tracking.artifactmanager.ArtifactManager(self.client) as afm:
@@ -235,13 +238,6 @@ class MlflowDict(collections.abc.MutableMapping):
         # TODO: implement search
         raise NotImplementedError("Not implemented yet")
 
-    def set_value(self, k, v, tags=None):
-        """Sets a value, optionally with additional tags."""
-        self._log_artifact(k, v, tags=tags)
-        self.local_all_keys.add(k)
-        if self.local_cache:
-            self.local_data[k] = v
-
     def apply_logging(self, logging):
         """Applies logging to elements. This allows to add additional metrics, parameters, tags, etc. to values
         even after they have been set."""
@@ -249,8 +245,35 @@ class MlflowDict(collections.abc.MutableMapping):
             with mlflowhelper.tracking.artifactmanager.ArtifactManager(self.client) as afm:
                 self._custom_logging(logging, afm, run, key, value)
 
+    def set_item(self, k, v, tags=None):
+        """Sets a value, optionally with additional tags."""
+        if len(self.local_all_keys) == SEARCH_MAX_RESULTS_THRESHOLD:
+            raise MemoryError(
+                f"Exceeding size limit for retrieval ({SEARCH_MAX_RESULTS_THRESHOLD}). "
+                "This may result in missing values. "
+                "This is a known limitation and will have to be fixed "
+                "if it becomes an issue in practice.")
+        self._log_artifact(k, v, tags=tags)
+        self.local_all_keys.add(k)
+        if self.local_cache:
+            self.local_data[k] = v
+
+    def get_run(self, k):
+        runs = self._get_runs(k)
+        if len(runs) == 0:
+            return None
+        elif len(runs) == 1:
+            return runs[0]
+        else:
+            raise KeyError(f"Too many entries for key `{k}`: {len(runs)}")
+
+    def update_keys(self):
+        """Call this when you suspect that the dict might have been updated from elsewhere."""
+        self.local_all_keys = set(v.data.tags[f"{self.mlflow_tag_prefix}._key"] for v in self._get_all_runs())
+        return self.local_all_keys
+
     def __setitem__(self, k, v) -> None:
-        self.set_value(k, v, tags=None)
+        self.set_item(k, v, tags=None)
 
     def __delitem__(self, k) -> None:
         self._del_artifacts(k)
@@ -262,21 +285,18 @@ class MlflowDict(collections.abc.MutableMapping):
         if self.local_data is not None and k in self.local_data:
             return self.local_data[k]
         else:
-            runs = self._get_runs(k)
-            if len(runs) > 1:
-                raise Exception(f"Too many entries for key: `{k}`")
-            elif len(runs) == 0:
+            run = self.get_run(k)
+            if run is None:
                 if hasattr(self.__class__, "__missing__"):
                     # noinspection PyUnresolvedReferences
                     return self.__class__.__missing__(self, k)
-            if len(runs) == 1:
-                run_id = runs[0].info.run_id
-                value = self._load_artifact(run_id)
+                else:
+                    raise KeyError(f"Key does not exist: {k}")
+            else:
+                value = self._load_artifact(run.info.run_id)
                 if self.local_cache:
                     self.local_data[k] = value
                 return value
-            else:
-                raise KeyError(f"Key does not exist: {k}")
 
     def __len__(self) -> int:
         return len(self.local_all_keys)
