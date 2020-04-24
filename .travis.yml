@@ -9,7 +9,6 @@ matrix:
     env: DISTRIB="ubuntu" TOX_PYTHON_VERSION="py36" COVERAGE="true"
   - python: 3.7
     env: DISTRIB="ubuntu" TOX_PYTHON_VERSION="py37" COVERAGE="true"
-  - env: DISTRIB="conda" PYTHON_VERSION="3.5" COVERAGE="false"
   - env: DISTRIB="conda" PYTHON_VERSION="3.6" COVERAGE="false"
   - env: DISTRIB="conda" PYTHON_VERSION="3.7" COVERAGE="false"
 install:
