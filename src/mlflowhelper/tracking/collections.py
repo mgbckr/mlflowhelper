@@ -3,15 +3,33 @@ import pickle
 import typing
 import warnings
 from abc import abstractmethod
+from dataclasses import dataclass
 from typing import Iterator
 
 import mlflow
 import mlflow.store.tracking
 import mlflow.utils.mlflow_tags
 import mlflowhelper.tracking.artifactmanager
+import tqdm
 from mlflow.store.tracking import SEARCH_MAX_RESULTS_THRESHOLD
 
 DICT_IDENTIFIER = "mlflow.tracking.collections.MlflowDict"
+
+
+@dataclass
+class Meta:
+    tags: typing.Union[list, dict, tuple] = None
+    params: typing.Union[list, dict, tuple] = None
+    metrics: typing.Union[list, dict, tuple] = None
+    artifacts: typing.Union[list, dict, tuple] = None
+    status: typing.Union[dict, tuple, str] = None
+
+
+@dataclass
+class MetaValue:
+    value: typing.Any
+    meta: Meta = None
+    update: bool = False
 
 
 class MlflowDict(collections.abc.MutableMapping):
@@ -66,8 +84,10 @@ class MlflowDict(collections.abc.MutableMapping):
             mlflow_tag_prefix="_mlflowdict",
             mlflow_custom_logger=None,
             mlflow_pickler: typing.Union[Pickler, str] = 'pickle',
-            local_cache=True,
-            lazy_cache=True):
+            sync_mode=None,
+            local_value_cache=True,
+            lazy_value_cache=True,
+            read_only=False):
         """
         Dictionaries are identified by
         1) `mlflow_experiment_name` and 2) the `mlflow_tag_dict_name` in MLflow.
@@ -96,8 +116,29 @@ class MlflowDict(collections.abc.MutableMapping):
             By default MlflowDict uses `pickle` to serialize values. You can provide a custom pickler here.
             See `MlflowDict.Pickler` for the interface. If set to `None`, no value will be logged and the result upon
             retrieving an element from the dict will be `None`.
-        :param local_cache:
-        :param lazy_cache:
+        :param sync_mode:
+            Specifies the synchronization mode.
+            * None: no active synchronization.
+            * "keys": will keep keys synchronized. This means that we do not cache keys,
+                but update them every time this dict is accessed.
+                This may slow down the dict operations a lot depending on
+                access frequency, dict size and network latency.
+            * "full": will keep keys (see "keys" mode) and locally cached values in sync.
+                Caching values will only take effect if local value caching is activated (`local_value_cache=True`).
+                If a value is in the local cache but the synchronized key has a newer timestamp
+                then the value is updated.
+                TODO:
+                    * keys:
+                        * update keys every time they are accessed
+                    * full:
+                        * set timestamps
+                        * keep timestamps with values
+                        * update values
+                    * implement setting meta data
+        :param local_value_cache:
+            Whether to keep a local cache of values.
+        :param lazy_value_cache:
+            Whether to download and cache all values on initialization (`lazy_cache=False`) or not.
         """
 
         # init client
@@ -128,14 +169,20 @@ class MlflowDict(collections.abc.MutableMapping):
         else:
             self.mlflow_pickler = mlflow_pickler
 
+        # sync
+        self.keep_keys_in_sync = sync_mode
+
         # caching
-        self.local_cache = local_cache
-        self.lazy_cache = lazy_cache
+        self.local_cache = local_value_cache
+        self.lazy_cache = lazy_value_cache
         self.local_all_keys = self.update_keys()
-        if not lazy_cache:
+        if not lazy_value_cache:
             self._init_data()
         else:
             self.local_data = dict()
+
+        # read only
+        self.read_only = read_only
 
         # check whether dict exists
         if len(self.local_all_keys) > 0:
@@ -144,12 +191,17 @@ class MlflowDict(collections.abc.MutableMapping):
     def _init_data(self):
         self.local_data = dict(self._get_all_data())
 
-    def _log_artifact(self, key, value, tags=None):
+    def _log_value(self, key, value, tags=None):
 
-        for run in self._get_runs(key):
-            self.client.delete_run(run.info.run_id)
+        # delete existing value / run before setting is (if update is not requested)
+        if not isinstance(value, MetaValue) or not value.update:
+            for run in self._get_runs_with_name(key):
+                self.client.delete_run(run.info.run_id)
 
-        run = self.client.create_run(self.experiment.experiment_id)
+        # get or create run
+        run = self.get_run(key)
+        if run is None:
+            run = self.client.create_run(self.experiment.experiment_id)
 
         # noinspection PyBroadException
         try:
@@ -159,7 +211,7 @@ class MlflowDict(collections.abc.MutableMapping):
             self.client.set_tag(run.info.run_id, f"{self.mlflow_tag_prefix}._name", self.mlflow_tag_dict_name)
             self.client.set_tag(run.info.run_id, f"{self.mlflow_tag_prefix}._key", key)
 
-            # set other tags
+            # set optional tags
             self.client.set_tag(
                 run.info.run_id,
                 mlflow.utils.mlflow_tags.MLFLOW_RUN_NAME,
@@ -174,18 +226,36 @@ class MlflowDict(collections.abc.MutableMapping):
             if self.mlflow_tag_defaults is not None:
                 for tag, value in self.mlflow_tag_defaults:
                     self.client.set_tag(run.info.run_id, tag, value)
-            if tags is not None:
-                if isinstance(tags, str):
-                    tags = [tags]
-                for tag in tags:
-                    self.client.set_tag(run.info.run_id, tag, value)
+
+            # set meta data if applicable
+            def set_run(func, values):
+                if values is not None:
+                    if not isinstance(values, list):
+                        values = [values]
+                    for args in values:
+                        if isinstance(args, dict):
+                            func(run.info.run_id, **args)
+                        else:
+                            if not isinstance(args, tuple):
+                                args = (args, )
+                            func(run.info.run_id, *args)
+
+            if isinstance(value, MetaValue):
+                set_run(self.client.set_tag, value.meta.tags)
+                set_run(self.client.log_param, value.meta.params)
+                set_run(self.client.log_metric, value.meta.metrics)
+                set_run(self.client.log_artifact, value.meta.artifacts)
+                set_run(self.client.set_terminated, value.meta.status)
 
             # custom logging
+            value = value.value if isinstance(value, MetaValue) else value
             with mlflowhelper.tracking.artifactmanager.ArtifactManager(self.client) as afm:
                 self._custom_logging(self.mlflow_custom_logger, afm, run, key, value)
                 if self.mlflow_pickler is not None:
                     with afm.managed_artifact("value.pickle", dst_run_id=run.info.run_id) as a:
                         self.mlflow_pickler.dump(value, a.get_path())
+
+            return value
 
         except Exception as e:
             # clean up run in case of error
@@ -199,11 +269,11 @@ class MlflowDict(collections.abc.MutableMapping):
             else:
                 logger.log(self.client, artifact_manager, run, key, value)
 
-    def _del_artifacts(self, name):
-        for run in self._get_runs(name):
+    def _del_artifacts_with_name(self, name):
+        for run in self._get_runs_with_name(name):
             self.client.delete_run(run.info.run_id)
 
-    def _get_runs(self, name):
+    def _get_runs_with_name(self, name):
         return self.client.search_runs(
             self.experiment.experiment_id,
             filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
@@ -245,21 +315,24 @@ class MlflowDict(collections.abc.MutableMapping):
             with mlflowhelper.tracking.artifactmanager.ArtifactManager(self.client) as afm:
                 self._custom_logging(logging, afm, run, key, value)
 
-    def set_item(self, k, v, tags=None):
+    def set_item(self, k, v):
+        if self.read_only:
+            raise RuntimeError("Dict is in 'read only' mode.")
+
         """Sets a value, optionally with additional tags."""
-        if len(self.local_all_keys) == SEARCH_MAX_RESULTS_THRESHOLD:
+        if len(self.local_all_keys) >= SEARCH_MAX_RESULTS_THRESHOLD:
             raise MemoryError(
                 f"Exceeding size limit for retrieval ({SEARCH_MAX_RESULTS_THRESHOLD}). "
                 "This may result in missing values. "
                 "This is a known limitation and will have to be fixed "
                 "if it becomes an issue in practice.")
-        self._log_artifact(k, v, tags=tags)
+        value = self._log_value(k, v)
         self.local_all_keys.add(k)
         if self.local_cache:
-            self.local_data[k] = v
+            self.local_data[k] = value
 
     def get_run(self, k):
-        runs = self._get_runs(k)
+        runs = self._get_runs_with_name(k)
         if len(runs) == 0:
             return None
         elif len(runs) == 1:
@@ -272,17 +345,42 @@ class MlflowDict(collections.abc.MutableMapping):
         self.local_all_keys = set(v.data.tags[f"{self.mlflow_tag_prefix}._key"] for v in self._get_all_runs())
         return self.local_all_keys
 
+    def runs(self, include_values=False):
+        """
+        :param include_values:
+        :return:
+            * include_values=True  -> yield key, value, run
+            * include_values=False -> yield key, run
+        """
+        if include_values:
+            yield from self._get_all_data(include_runs=True)
+        else:
+            yield from self._get_all_runs()
+
+    def delete_all(self, verbose=False):
+        if verbose:
+            it = tqdm.tqdm(list(self.keys()))
+        else:
+            it = list(self.keys())
+
+        for k in it:
+            del self[k]
+
     def __setitem__(self, k, v) -> None:
-        self.set_item(k, v, tags=None)
+        self.set_item(k, v)
 
     def __delitem__(self, k) -> None:
-        self._del_artifacts(k)
+        if self.read_only:
+            raise RuntimeError("Dict is in 'read only' mode.")
+
+        self._del_artifacts_with_name(k)
         self.local_all_keys.remove(k)
         if self.local_cache:
-            del self.local_data[k]
+            if k in self.local_data:
+                del self.local_data[k]
 
     def __getitem__(self, k):
-        if self.local_data is not None and k in self.local_data:
+        if self.local_cache and k in self.local_data:
             return self.local_data[k]
         else:
             run = self.get_run(k)
@@ -304,7 +402,7 @@ class MlflowDict(collections.abc.MutableMapping):
     def __iter__(self) -> Iterator:
         return iter(self.local_all_keys)
 
-    # Modify __contains__ to work correctly when __missing__ is present
+    # TODO: Modify __contains__ to work correctly when __missing__ is present
     def __contains__(self, key):
         return key in self.local_all_keys
 
