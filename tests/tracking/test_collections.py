@@ -65,11 +65,12 @@ def test_meta():
     import mlflow.entities
 
     d = mlflowhelper.tracking.collections.MlflowDict(local_value_cache=False)
-    d["a"] = mlflowhelper.tracking.collections.MetaValue("test", mlflowhelper.tracking.collections.Meta(
+    d["a"] = mlflowhelper.tracking.collections.MetaValue(
+        "test",
         tags=("tag1", "value1"),
         params=dict(key="param1", value=99),
         metrics=[("metric1", i, i, i) for i in range(10)],
-        status="FAILED"))
+        status="FAILED")
 
     assert d["a"] == "test"
 
@@ -82,11 +83,10 @@ def test_meta():
     # update
     d["a"] = mlflowhelper.tracking.collections.MetaValue(
         "test2",
-        mlflowhelper.tracking.collections.Meta(
-            tags=("tag2", "value2"),
-            params=dict(key="param2", value=100),
-            metrics=[("metric2", i, i, i) for i in range(10)],
-            status="FINISHED"),
+        tags=("tag2", "value2"),
+        params=dict(key="param2", value=100),
+        metrics=[("metric2", i, i, i) for i in range(10)],
+        status="FINISHED",
         update=True)
 
     assert d["a"] == "test2"
@@ -106,11 +106,10 @@ def test_meta():
     # overwrite
     d["a"] = mlflowhelper.tracking.collections.MetaValue(
         "test3",
-        mlflowhelper.tracking.collections.Meta(
-            tags=("tag3", "value3"),
-            params=dict(key="param3", value=101),
-            metrics=[("metric3", i, i, i) for i in range(10)],
-            status="FINISHED"),
+        tags=("tag3", "value3"),
+        params=dict(key="param3", value=101),
+        metrics=[("metric3", i, i, i) for i in range(10)],
+        status="FINISHED",
         update=False)
 
     assert d["a"] == "test3"

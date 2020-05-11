@@ -19,18 +19,13 @@ DICT_IDENTIFIER = "mlflow.tracking.collections.MlflowDict"
 
 
 @dataclass
-class Meta:
+class MetaValue:
+    value: typing.Any = None
     tags: typing.Union[list, dict, tuple] = None
     params: typing.Union[list, dict, tuple] = None
     metrics: typing.Union[list, dict, tuple] = None
     artifacts: typing.Union[list, dict, tuple] = None
     status: typing.Union[dict, tuple, str] = None
-
-
-@dataclass
-class MetaValue:
-    value: typing.Any
-    meta: Meta = None
     update: bool = False
 
 
@@ -169,9 +164,9 @@ class MlflowDict(collections.abc.MutableMapping):
         # caching
         self.local_cache = local_value_cache
         self.lazy_cache = lazy_value_cache
-        self.local_all_keys = self.update_keys()
 
         self.local_values = dict()
+        self.local_all_keys = self.update_keys()
         if not lazy_value_cache:
             self._init_values()
 
@@ -239,11 +234,11 @@ class MlflowDict(collections.abc.MutableMapping):
                             func(run.info.run_id, *args)
 
             if isinstance(value, MetaValue):
-                set_run(self.client.set_tag, value.meta.tags)
-                set_run(self.client.log_param, value.meta.params)
-                set_run(self.client.log_metric, value.meta.metrics)
-                set_run(self.client.log_artifact, value.meta.artifacts)
-                set_run(self.client.set_terminated, value.meta.status)
+                set_run(self.client.set_tag, value.tags)
+                set_run(self.client.log_param, value.params)
+                set_run(self.client.log_metric, value.metrics)
+                set_run(self.client.log_artifact, value.artifacts)
+                set_run(self.client.set_terminated, value.status)
 
             # custom logging
             value = value.value if isinstance(value, MetaValue) else value
@@ -326,6 +321,13 @@ class MlflowDict(collections.abc.MutableMapping):
     def update_keys(self):
         """Fetches keys from MlFlow. Call this when you suspect that the dict might have been updated from elsewhere."""
         self.local_all_keys = set(v.data.tags[f"{self.mlflow_tag_prefix}._key"] for v in self._get_all_runs())
+
+        # clean up mising values
+        if self.local_cache:
+            for k in list(self.local_values.keys()):
+                if k not in self.local_all_keys:
+                    del self.local_values[k]
+
         return self.local_all_keys
 
     def runs(self, include_values=False):
@@ -376,7 +378,7 @@ class MlflowDict(collections.abc.MutableMapping):
                 del self.local_values[k]
 
     def __getitem__(self, k):
-        if self.local_cache and k in self.local_values:
+        if k in self and self.local_cache and k in self.local_values:
             local_value, local_timestamp = self.local_values[k]
 
             if self.sync_mode == "full":
@@ -384,8 +386,6 @@ class MlflowDict(collections.abc.MutableMapping):
                 # get remote value and timestamp
                 run: mlflow.entities.Run = self.get_run(k)
                 remote_timestamp = int(run.data.tags[f"{self.mlflow_tag_prefix}._timestamp"])
-
-                print("BLUBB", remote_timestamp, local_timestamp)
 
                 # choose value to return based on timestamp
                 if remote_timestamp > local_timestamp:
@@ -397,6 +397,8 @@ class MlflowDict(collections.abc.MutableMapping):
             else:
                 return local_value
         else:
+            # TODO: maybe limit get run to key that we know exists?
+            # TODO: We could also cache run ids together with keys for less requests.
             run: mlflow.entities.Run = self.get_run(k)
             if run is None:
                 if hasattr(self.__class__, "__missing__"):
