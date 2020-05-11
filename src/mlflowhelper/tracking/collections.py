@@ -1,5 +1,7 @@
 import collections.abc
+import os
 import pickle
+import socket
 import time
 import typing
 import warnings
@@ -192,9 +194,10 @@ class MlflowDict(collections.abc.MutableMapping):
         tags[f"{self.mlflow_tag_prefix}._class"] = DICT_IDENTIFIER
         tags[f"{self.mlflow_tag_prefix}._name"] = self.mlflow_tag_dict_name
         tags[f"{self.mlflow_tag_prefix}._key"] = key
-        tags[f"{self.mlflow_tag_prefix}._timestamp"] = timestamp
+        tags[f"{self.mlflow_tag_prefix}._timestamp"] = str(timestamp)
 
         # set optional tags
+        tags[f"{self.mlflow_tag_prefix}._source"] = f"{socket.gethostname()}___{os.getpid()}"
         tags[mlflow.utils.mlflow_tags.MLFLOW_RUN_NAME] = \
             f"{self.mlflow_tag_dict_name}{self.mlflow_tag_name_separator}{key}"
         tags[mlflow.utils.mlflow_tags.MLFLOW_USER] = f"{self.mlflow_tag_user}"
