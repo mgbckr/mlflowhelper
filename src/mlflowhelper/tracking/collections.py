@@ -197,7 +197,7 @@ class MlflowDict(collections.abc.MutableMapping):
         tags[f"{self.mlflow_tag_prefix}._timestamp"] = str(timestamp)
 
         # set optional tags
-        tags[f"{self.mlflow_tag_prefix}._source"] = f"{socket.gethostname()}___{os.getpid()}"
+        tags[f"{self.mlflow_tag_prefix}._item_source"] = f"{socket.gethostname()}___{os.getpid()}"
         tags[mlflow.utils.mlflow_tags.MLFLOW_RUN_NAME] = \
             f"{self.mlflow_tag_dict_name}{self.mlflow_tag_name_separator}{key}"
         tags[mlflow.utils.mlflow_tags.MLFLOW_USER] = f"{self.mlflow_tag_user}"
