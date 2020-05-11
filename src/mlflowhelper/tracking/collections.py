@@ -185,40 +185,38 @@ class MlflowDict(collections.abc.MutableMapping):
 
         timestamp = int(round(time.time() * 1000))
 
-        # delete existing value / run before setting is (if update is not requested)
+        # compile tags
+        tags = dict()
+
+        # required tags
+        tags[f"{self.mlflow_tag_prefix}._class"] = DICT_IDENTIFIER
+        tags[f"{self.mlflow_tag_prefix}._name"] = self.mlflow_tag_dict_name
+        tags[f"{self.mlflow_tag_prefix}._key"] = key
+        tags[f"{self.mlflow_tag_prefix}._timestamp"] = timestamp
+
+        # set optional tags
+        tags[mlflow.utils.mlflow_tags.MLFLOW_RUN_NAME] = \
+            f"{self.mlflow_tag_dict_name}{self.mlflow_tag_name_separator}{key}"
+        tags[mlflow.utils.mlflow_tags.MLFLOW_USER] = f"{self.mlflow_tag_user}"
+        if self.mlflow_tag_defaults is not None:
+            for tag, value in self.mlflow_tag_defaults:
+                tags[tag] = value
+        if self.mlflow_tag_defaults is not None:
+            for tag, value in self.mlflow_tag_defaults:
+                tags[tag] = value
+
+        # delete existing value / run before setting is if update is not requested
         if not isinstance(value, MetaValue) or not value.update:
             for run in self._get_runs_with_name(key):
                 self.client.delete_run(run.info.run_id)
 
-        # get or create run
+        # get (MetaValue.update=True only) or create run
         run: mlflow.entities.Run = self.get_run(key)
         if run is None:
-            run = self.client.create_run(self.experiment.experiment_id)
+            run = self.client.create_run(self.experiment.experiment_id, tags)
 
         # noinspection PyBroadException
         try:
-            # set required tags
-            self.client.set_tag(
-                run.info.run_id, f"{self.mlflow_tag_prefix}._class", DICT_IDENTIFIER)
-            self.client.set_tag(run.info.run_id, f"{self.mlflow_tag_prefix}._name", self.mlflow_tag_dict_name)
-            self.client.set_tag(run.info.run_id, f"{self.mlflow_tag_prefix}._key", key)
-            self.client.set_tag(run.info.run_id, f"{self.mlflow_tag_prefix}._timestamp", timestamp)
-
-            # set optional tags
-            self.client.set_tag(
-                run.info.run_id,
-                mlflow.utils.mlflow_tags.MLFLOW_RUN_NAME,
-                f"{self.mlflow_tag_dict_name}{self.mlflow_tag_name_separator}{key}")
-            self.client.set_tag(
-                run.info.run_id,
-                mlflow.utils.mlflow_tags.MLFLOW_USER,
-                f"{self.mlflow_tag_user}")
-            if self.mlflow_tag_defaults is not None:
-                for tag, value in self.mlflow_tag_defaults:
-                    self.client.set_tag(run.info.run_id, tag, value)
-            if self.mlflow_tag_defaults is not None:
-                for tag, value in self.mlflow_tag_defaults:
-                    self.client.set_tag(run.info.run_id, tag, value)
 
             # set meta data if applicable
             def set_run(func, values):
@@ -234,6 +232,9 @@ class MlflowDict(collections.abc.MutableMapping):
                             func(run.info.run_id, *args)
 
             if isinstance(value, MetaValue):
+                if value.update:
+                    set_run(self.client.set_tag, list(tags.items()))
+
                 set_run(self.client.set_tag, value.tags)
                 set_run(self.client.log_param, value.params)
                 set_run(self.client.log_metric, value.metrics)
