@@ -213,7 +213,7 @@ class MlflowDict(collections.abc.MutableMapping):
         # get (MetaValue.update=True only) or create run
         run: mlflow.entities.Run = self.get_run(key)
         if run is None:
-            run = self.client.create_run(self.experiment.experiment_id, tags)
+            run = self.client.create_run(self.experiment.experiment_id, tags=tags)
 
         # noinspection PyBroadException
         try:
