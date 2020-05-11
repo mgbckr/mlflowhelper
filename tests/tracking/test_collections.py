@@ -129,3 +129,47 @@ def test_meta():
     assert run.data.params["param3"] == "101"
     assert run.data.metrics["metric3"] == 9
     assert run.info.status == "FINISHED"
+
+
+def test_sync_no_cache():
+
+    import mlflowhelper.tracking.collections
+
+    d1 = mlflowhelper.tracking.collections.MlflowDict(local_value_cache=False)
+    d2 = mlflowhelper.tracking.collections.MlflowDict(local_value_cache=False)
+    d3 = mlflowhelper.tracking.collections.MlflowDict(local_value_cache=False, sync_mode="keys")
+    d4 = mlflowhelper.tracking.collections.MlflowDict(local_value_cache=False, sync_mode="full")
+
+    d1["a"] = 5
+    assert "a" in d1 and d1["a"] == 5
+    assert "a" not in d2
+    assert "a" in d3 and d1["a"] == 5
+    assert "a" in d4 and d1["a"] == 5
+
+    d1["a"] = 6
+    assert d1["a"] == 6
+    assert d2["a"] == 6
+    assert d3["a"] == 6
+    assert d4["a"] == 6
+
+
+def test_sync_cache():
+
+    import mlflowhelper.tracking.collections
+
+    d1 = mlflowhelper.tracking.collections.MlflowDict(local_value_cache=True)
+    d2 = mlflowhelper.tracking.collections.MlflowDict(local_value_cache=True)
+    d3 = mlflowhelper.tracking.collections.MlflowDict(local_value_cache=True, sync_mode="keys")
+    d4 = mlflowhelper.tracking.collections.MlflowDict(local_value_cache=True, sync_mode="full")
+
+    d1["a"] = 5
+    assert "a" in d1 and d1["a"] == 5
+    assert "a" not in d2
+    assert "a" in d3 and d3["a"] == 5
+    assert "a" in d4 and d4["a"] == 5
+
+    d1["a"] = 6
+    assert d1["a"] == 6
+    assert "a" not in d2
+    assert d3["a"] == 5
+    assert d4["a"] == 6

@@ -1,5 +1,6 @@
 import collections.abc
 import pickle
+import time
 import typing
 import warnings
 from abc import abstractmethod
@@ -7,6 +8,7 @@ from dataclasses import dataclass
 from typing import Iterator
 
 import mlflow
+import mlflow.entities
 import mlflow.store.tracking
 import mlflow.utils.mlflow_tags
 import mlflowhelper.tracking.artifactmanager
@@ -127,14 +129,6 @@ class MlflowDict(collections.abc.MutableMapping):
                 Caching values will only take effect if local value caching is activated (`local_value_cache=True`).
                 If a value is in the local cache but the synchronized key has a newer timestamp
                 then the value is updated.
-                TODO:
-                    * keys:
-                        * update keys every time they are accessed
-                    * full:
-                        * set timestamps
-                        * keep timestamps with values
-                        * update values
-                    * implement setting meta data
         :param local_value_cache:
             Whether to keep a local cache of values.
         :param lazy_value_cache:
@@ -170,16 +164,16 @@ class MlflowDict(collections.abc.MutableMapping):
             self.mlflow_pickler = mlflow_pickler
 
         # sync
-        self.keep_keys_in_sync = sync_mode
+        self.sync_mode = sync_mode
 
         # caching
         self.local_cache = local_value_cache
         self.lazy_cache = lazy_value_cache
         self.local_all_keys = self.update_keys()
+
+        self.local_values = dict()
         if not lazy_value_cache:
-            self._init_data()
-        else:
-            self.local_data = dict()
+            self._init_values()
 
         # read only
         self.read_only = read_only
@@ -188,10 +182,13 @@ class MlflowDict(collections.abc.MutableMapping):
         if len(self.local_all_keys) > 0:
             warnings.warn("Dict already exists")
 
-    def _init_data(self):
-        self.local_data = dict(self._get_all_data())
+    def _init_values(self):
+        self.local_values = {key: (value, int(run.data.tags[f"{self.mlflow_tag_prefix}._timestamp"]))
+                             for key, value, run in self._get_items(return_runs=True)}
 
-    def _log_value(self, key, value, tags=None):
+    def _log_value(self, key, value):
+
+        timestamp = int(round(time.time() * 1000))
 
         # delete existing value / run before setting is (if update is not requested)
         if not isinstance(value, MetaValue) or not value.update:
@@ -199,7 +196,7 @@ class MlflowDict(collections.abc.MutableMapping):
                 self.client.delete_run(run.info.run_id)
 
         # get or create run
-        run = self.get_run(key)
+        run: mlflow.entities.Run = self.get_run(key)
         if run is None:
             run = self.client.create_run(self.experiment.experiment_id)
 
@@ -210,6 +207,7 @@ class MlflowDict(collections.abc.MutableMapping):
                 run.info.run_id, f"{self.mlflow_tag_prefix}._class", DICT_IDENTIFIER)
             self.client.set_tag(run.info.run_id, f"{self.mlflow_tag_prefix}._name", self.mlflow_tag_dict_name)
             self.client.set_tag(run.info.run_id, f"{self.mlflow_tag_prefix}._key", key)
+            self.client.set_tag(run.info.run_id, f"{self.mlflow_tag_prefix}._timestamp", timestamp)
 
             # set optional tags
             self.client.set_tag(
@@ -255,7 +253,7 @@ class MlflowDict(collections.abc.MutableMapping):
                     with afm.managed_artifact("value.pickle", dst_run_id=run.info.run_id) as a:
                         self.mlflow_pickler.dump(value, a.get_path())
 
-            return value
+            return value, timestamp
 
         except Exception as e:
             # clean up run in case of error
@@ -294,11 +292,12 @@ class MlflowDict(collections.abc.MutableMapping):
                 value = self.mlflow_pickler.load(a.get_path())
                 return value
 
-    def _get_all_data(self, include_runs=False):
+    def _get_items(self, return_runs=False):
+        """Loads all items directly from MlFlow skipping any local cache."""
         for r in self._get_all_runs():
             key = r.data.tags[f"{self.mlflow_tag_prefix}._key"]
             value = self._load_artifact(r.info.run_id)
-            if include_runs:
+            if return_runs:
                 yield key, value, r
             else:
                 yield key, value
@@ -311,25 +310,9 @@ class MlflowDict(collections.abc.MutableMapping):
     def apply_logging(self, logging):
         """Applies logging to elements. This allows to add additional metrics, parameters, tags, etc. to values
         even after they have been set."""
-        for key, value, run in self._get_all_data(include_runs=True):
+        for key, value, run in self._get_items(return_runs=True):
             with mlflowhelper.tracking.artifactmanager.ArtifactManager(self.client) as afm:
                 self._custom_logging(logging, afm, run, key, value)
-
-    def set_item(self, k, v):
-        if self.read_only:
-            raise RuntimeError("Dict is in 'read only' mode.")
-
-        """Sets a value, optionally with additional tags."""
-        if len(self.local_all_keys) >= SEARCH_MAX_RESULTS_THRESHOLD:
-            raise MemoryError(
-                f"Exceeding size limit for retrieval ({SEARCH_MAX_RESULTS_THRESHOLD}). "
-                "This may result in missing values. "
-                "This is a known limitation and will have to be fixed "
-                "if it becomes an issue in practice.")
-        value = self._log_value(k, v)
-        self.local_all_keys.add(k)
-        if self.local_cache:
-            self.local_data[k] = value
 
     def get_run(self, k):
         runs = self._get_runs_with_name(k)
@@ -341,7 +324,7 @@ class MlflowDict(collections.abc.MutableMapping):
             raise KeyError(f"Too many entries for key `{k}`: {len(runs)}")
 
     def update_keys(self):
-        """Call this when you suspect that the dict might have been updated from elsewhere."""
+        """Fetches keys from MlFlow. Call this when you suspect that the dict might have been updated from elsewhere."""
         self.local_all_keys = set(v.data.tags[f"{self.mlflow_tag_prefix}._key"] for v in self._get_all_runs())
         return self.local_all_keys
 
@@ -353,7 +336,7 @@ class MlflowDict(collections.abc.MutableMapping):
             * include_values=False -> yield key, run
         """
         if include_values:
-            yield from self._get_all_data(include_runs=True)
+            yield from self._get_items(return_runs=True)
         else:
             yield from self._get_all_runs()
 
@@ -367,7 +350,20 @@ class MlflowDict(collections.abc.MutableMapping):
             del self[k]
 
     def __setitem__(self, k, v) -> None:
-        self.set_item(k, v)
+        if self.read_only:
+            raise RuntimeError("Dict is in 'read only' mode.")
+
+        """Sets a value, optionally with additional tags."""
+        if len(self.local_all_keys) >= SEARCH_MAX_RESULTS_THRESHOLD:
+            raise MemoryError(
+                f"Exceeding size limit for retrieval ({SEARCH_MAX_RESULTS_THRESHOLD}). "
+                "This may result in missing values. "
+                "This is a known limitation and will have to be fixed "
+                "if it becomes an issue in practice.")
+        value, timestamp = self._log_value(k, v)
+        self.local_all_keys.add(k)
+        if self.local_cache:
+            self.local_values[k] = (value, timestamp)
 
     def __delitem__(self, k) -> None:
         if self.read_only:
@@ -376,14 +372,32 @@ class MlflowDict(collections.abc.MutableMapping):
         self._del_artifacts_with_name(k)
         self.local_all_keys.remove(k)
         if self.local_cache:
-            if k in self.local_data:
-                del self.local_data[k]
+            if k in self.local_values:
+                del self.local_values[k]
 
     def __getitem__(self, k):
-        if self.local_cache and k in self.local_data:
-            return self.local_data[k]
+        if self.local_cache and k in self.local_values:
+            local_value, local_timestamp = self.local_values[k]
+
+            if self.sync_mode == "full":
+
+                # get remote value and timestamp
+                run: mlflow.entities.Run = self.get_run(k)
+                remote_timestamp = int(run.data.tags[f"{self.mlflow_tag_prefix}._timestamp"])
+
+                print("BLUBB", remote_timestamp, local_timestamp)
+
+                # choose value to return based on timestamp
+                if remote_timestamp > local_timestamp:
+                    remote_value = self._load_artifact(run.info.run_id)
+                    self.local_values[k] = (remote_value, remote_timestamp)
+                    return remote_value
+                else:
+                    return local_value
+            else:
+                return local_value
         else:
-            run = self.get_run(k)
+            run: mlflow.entities.Run = self.get_run(k)
             if run is None:
                 if hasattr(self.__class__, "__missing__"):
                     # noinspection PyUnresolvedReferences
@@ -392,8 +406,9 @@ class MlflowDict(collections.abc.MutableMapping):
                     raise KeyError(f"Key does not exist: {k}")
             else:
                 value = self._load_artifact(run.info.run_id)
+                timestamp = int(run.data.tags[f"{self.mlflow_tag_prefix}._timestamp"])
                 if self.local_cache:
-                    self.local_data[k] = value
+                    self.local_values[k] = value, timestamp
                 return value
 
     def __len__(self) -> int:
@@ -404,6 +419,8 @@ class MlflowDict(collections.abc.MutableMapping):
 
     # TODO: Modify __contains__ to work correctly when __missing__ is present
     def __contains__(self, key):
+        if self.sync_mode is not None:
+            self.update_keys()
         return key in self.local_all_keys
 
     # Now, add the methods in dicts but not in MutableMapping
