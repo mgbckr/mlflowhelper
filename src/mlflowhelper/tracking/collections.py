@@ -173,6 +173,8 @@ class MlflowDict(collections.abc.MutableMapping):
         else:
             self.mlflow_pickler = mlflow_pickler
 
+        self.only_load_finished_runs = only_load_finished_runs
+
         # sync
         self.sync_mode = sync_mode
 
@@ -191,8 +193,6 @@ class MlflowDict(collections.abc.MutableMapping):
         # check whether dict exists
         if len(self.local_all_keys) > 0:
             warnings.warn("Dict already exists")
-
-        self.only_load_finished_runs = only_load_finished_runs
 
     def _init_values(self):
         self.local_values = {key: (value, int(run.data.tags[f"{self.mlflow_tag_prefix}._timestamp"]))
