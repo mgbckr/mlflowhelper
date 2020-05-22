@@ -4,6 +4,7 @@ import pickle
 import socket
 import time
 import typing
+import uuid
 import warnings
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ from typing import Iterator
 
 import mlflow
 import mlflow.entities
+import mlflow.exceptions
 import mlflow.store.tracking
 import mlflow.utils.mlflow_tags
 import mlflowhelper.tracking.artifactmanager
@@ -37,6 +39,14 @@ class MlflowDict(collections.abc.MutableMapping):
     WARNING: You need to explicitly set values again when you change them since the local cache is not automatically
     synchronized.
     """
+    # TODO: Fix race conditions for synchronous access:
+    #   We might be able to fix this by not deleting runs straight away.
+    #   Instead we can manually select the most recent run when retrieving values.
+    #   For clean-up we sweep through all runs every now and the and delete every run
+    #   except the most recent ones for each key.
+    #
+    # TODO: Don't interpret runs with no value as valid keys.
+    #   Or maybe it makes more sense to not interpret runs with `state!=FINISHED` as runs.
 
     class Pickler:
         """Abstract Pickler class which can be used for custom pickling."""
@@ -86,7 +96,8 @@ class MlflowDict(collections.abc.MutableMapping):
             sync_mode=None,
             local_value_cache=True,
             lazy_value_cache=True,
-            read_only=False):
+            read_only=False,
+            only_load_finished_runs=False):
         """
         Dictionaries are identified by
         1) `mlflow_experiment_name` and 2) the `mlflow_tag_dict_name` in MLflow.
@@ -131,6 +142,8 @@ class MlflowDict(collections.abc.MutableMapping):
         :param lazy_value_cache:
             Whether to download and cache all values on initialization (`lazy_cache=False`) or not.
         """
+
+        self.lock_uuid = uuid.uuid4()
 
         # init client
         if mlflow_client is None:
@@ -179,6 +192,8 @@ class MlflowDict(collections.abc.MutableMapping):
         if len(self.local_all_keys) > 0:
             warnings.warn("Dict already exists")
 
+        self.only_load_finished_runs = only_load_finished_runs
+
     def _init_values(self):
         self.local_values = {key: (value, int(run.data.tags[f"{self.mlflow_tag_prefix}._timestamp"]))
                              for key, value, run in self._get_items(return_runs=True)}
@@ -208,14 +223,26 @@ class MlflowDict(collections.abc.MutableMapping):
             for tag, value in self.mlflow_tag_defaults:
                 tags[tag] = value
 
-        # delete existing value / run before setting is if update is not requested
+        # delete existing value / run before setting it, if update is not requested
         if not isinstance(value, MetaValue) or not value.update:
             for run in self._get_runs_with_name(key):
-                self.client.delete_run(run.info.run_id)
+                # catching possibility that another process has already deleted the run
+                # after we retrieved the corresponding runs
+                try:
+                    self.client.delete_run(run.info.run_id)
+                except mlflow.exceptions.RestException as e:
+                    if "Current state is deleted." in e.message:
+                        warnings.warn("Run was already deleted: {run.info.run_id}")
+                    else:
+                        raise e
 
-        # get (MetaValue.update=True only) or create run
+        # get run; the run exists if
+        # * this happens if MetaValue.update=True
+        # * OR when some other process created that run in the mean time
         run: mlflow.entities.Run = self.get_run(key)
+        # TODO: race condition: what if someone deletes the run before we can finish with it?
         if run is None:
+            # create run if the run is not there
             run = self.client.create_run(self.experiment.experiment_id, tags=tags)
 
         # noinspection PyBroadException
@@ -243,6 +270,9 @@ class MlflowDict(collections.abc.MutableMapping):
                 set_run(self.client.log_metric, value.metrics)
                 set_run(self.client.log_artifact, value.artifacts)
                 set_run(self.client.set_terminated, value.status)
+            else:
+                # set finished by default
+                self.client.set_terminated(run.info.run_id, "FINISHED")
 
             # custom logging
             value = value.value if isinstance(value, MetaValue) else value
@@ -266,7 +296,7 @@ class MlflowDict(collections.abc.MutableMapping):
             else:
                 logger.log(self.client, artifact_manager, run, key, value)
 
-    def _del_artifacts_with_name(self, name):
+    def _del_runs_with_name(self, name):
         for run in self._get_runs_with_name(name):
             self.client.delete_run(run.info.run_id)
 
@@ -275,14 +305,16 @@ class MlflowDict(collections.abc.MutableMapping):
             self.experiment.experiment_id,
             filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
                           f"AND tags.`{self.mlflow_tag_prefix}._name`='{self.mlflow_tag_dict_name}' "
-                          f"AND tags.`{self.mlflow_tag_prefix}._key`='{name}'",
+                          f"AND tags.`{self.mlflow_tag_prefix}._key`='{name}' "
+                          f"AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else "",
             max_results=SEARCH_MAX_RESULTS_THRESHOLD)
 
     def _get_all_runs(self):
         return self.client.search_runs(
             self.experiment.experiment_id,
             filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
-                          f"AND tags.`{self.mlflow_tag_prefix}._name`='{self.mlflow_tag_dict_name}'",
+                          f"AND tags.`{self.mlflow_tag_prefix}._name`='{self.mlflow_tag_dict_name}' "
+                          f"AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else "",
             max_results=SEARCH_MAX_RESULTS_THRESHOLD)
 
     def _load_artifact(self, run_id):
@@ -355,7 +387,101 @@ class MlflowDict(collections.abc.MutableMapping):
         for k in it:
             del self[k]
 
+    # @contextmanager
+    # def _acquire_run(self, key, create=False, timeout=3000, delay=200):
+    #     """Attempt to avoid inconsistent states caused by race conditions. Probably still doesn't solve all of them:
+    #         lock1 check
+    #                     lock2 check
+    #         lock1 start >
+    #                     lock2 start >                   # let this be slow for some reason
+    #                                     > lock1 set
+    #         lock1 read >
+    #                                     < lock1 send
+    #         lock1 acquired <
+    #                                     > lock2 set     # this is the issue: MlFlow server does not recognize locks ;)
+    #                     lock2 read >
+    #                                     < lock2 send
+    #                     lock2 acquired <
+    #
+    #         * lock2 should have failed
+    #         * if can happens if read and write are asynchronous on server
+    #         TODO: Better ideas without an external lock service?
+    #           YES! We can basically always only return the most recent entry for each key.
+    #           That way we never have concurrent access on each key and even have a kind of version control.
+    #           The old keys then need to be purged every now and then to keep the queries efficient (
+    #           check indices in database to make sure that we are doing the most efficient thing).
+    #     """
+    #
+    #     start = time.time()
+    #
+    #     lock_tag = f"{self.mlflow_tag_prefix}._lock"
+    #     lock_value = self.lock_uuid
+    #
+    #     run: typing.Union[str, mlflow.entities.Run, None] = "undefined"
+    #     while run == "undefined":
+    #
+    #         # check timeout
+    #         if time.time() - start > timeout / 1000:
+    #             raise RuntimeError(
+    #                 f"Acquiring run with name '{key}' took too long (> {timeout}). " \
+    #                 f"Possible deadlock while acquiring run.")
+    #
+    #         # get run and acquire lock
+    #         existing_runs = sorted(self._get_runs_with_name(key), key=lambda r: r.info.run_id)
+    #         if len(existing_runs) == 0:
+    #             if create:
+    #
+    #                 created_run = self.client.create_run(
+    #                     self.experiment.experiment_id,
+    #                     tags={lock_tag: lock_value})
+    #
+    #                 updated_runs = sorted(self._get_runs_with_name(key), key=lambda r: r.info.run_id)
+    #
+    #                 if lock_tag in updated_runs[0].data.tags and updated_runs[0].data.tags[lock_tag] == lock_value:
+    #                     run = updated_runs[0]
+    #                 else:
+    #                     self.client.delete_run(created_run.info.run_id)
+    #             else:
+    #                 run = None
+    #
+    #         elif len(existing_runs) > 0:
+    #
+    #             if lock_tag not in existing_runs[0].data.tags:
+    #
+    #                 # try to lock run
+    #                 # noinspection PyBroadException
+    #                 try:
+    #                     self.client.set_tag(existing_runs[0].info.run_id, lock_tag, lock_value)
+    #                 except Exception:
+    #                     # run may have been deleted in the meantime
+    #                     pass
+    #
+    #                 # check whether locking worked
+    #                 updated_runs = sorted(self._get_runs_with_name(key), key=lambda r: r.info.run_id)
+    #
+    #                 if len(updated_runs) > 0 \
+    #                         and lock_tag in updated_runs[0].data.tags \
+    #                         and updated_runs[0].data.tags[lock_tag] == lock_value:
+    #                     run = existing_runs[0]
+    #
+    #         else:
+    #             raise RuntimeError(f"More than one run with key: {key}")
+    #
+    #         # check if lock is acquired
+    #         if run is not None:
+    #             run = self.client.get_run(run.info.run_id)
+    #             if run.data.tags[lock_tag] != lock_value:
+    #                 run = "undefined"
+    #
+    #         time.sleep(np.random.randint(delay))
+    #
+    #     yield run
+    #
+    #     if run is not None:
+    #         self.client.delete_tag(run.info.run_id, "lock")
+
     def __setitem__(self, k, v) -> None:
+        # TODO: race conditions (acquire lock on run)
         if self.read_only:
             raise RuntimeError("Dict is in 'read only' mode.")
 
@@ -366,22 +492,25 @@ class MlflowDict(collections.abc.MutableMapping):
                 "This may result in missing values. "
                 "This is a known limitation and will have to be fixed "
                 "if it becomes an issue in practice.")
+
         value, timestamp = self._log_value(k, v)
         self.local_all_keys.add(k)
         if self.local_cache:
             self.local_values[k] = (value, timestamp)
 
     def __delitem__(self, k) -> None:
+        # TODO: race conditions (acquire lock on run)
         if self.read_only:
             raise RuntimeError("Dict is in 'read only' mode.")
 
-        self._del_artifacts_with_name(k)
+        self._del_runs_with_name(k)
         self.local_all_keys.remove(k)
         if self.local_cache:
             if k in self.local_values:
                 del self.local_values[k]
 
     def __getitem__(self, k):
+        # check value cache first depending on settings
         if k in self and self.local_cache and k in self.local_values:
             local_value, local_timestamp = self.local_values[k]
 
@@ -418,9 +547,13 @@ class MlflowDict(collections.abc.MutableMapping):
                 return value
 
     def __len__(self) -> int:
+        if self.sync_mode is not None:
+            self.update_keys()
         return len(self.local_all_keys)
 
     def __iter__(self) -> Iterator:
+        if self.sync_mode is not None:
+            self.update_keys()
         return iter(self.local_all_keys)
 
     # TODO: Modify __contains__ to work correctly when __missing__ is present
@@ -432,3 +565,27 @@ class MlflowDict(collections.abc.MutableMapping):
     # Now, add the methods in dicts but not in MutableMapping
     def __repr__(self):
         return repr(self.local_all_keys)
+
+    # def items(self):
+    #     return MlflowDict.ItemsView(self)
+
+    # class ItemsView(typing.MappingView, typing.Set):
+    #
+    #     __slots__ = ()
+    #
+    #     @classmethod
+    #     def _from_iterable(self, it):
+    #         return set(it)
+    #
+    #     def __contains__(self, item):
+    #         key, value = item
+    #         try:
+    #             v = self._mapping[key]
+    #         except KeyError:
+    #             return False
+    #         else:
+    #             return v is value or v == value
+    #
+    #     def __iter__(self):
+    #         for key in self._mapping:
+    #             yield (key, self._mapping[key])
