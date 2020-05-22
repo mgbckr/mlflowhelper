@@ -301,20 +301,22 @@ class MlflowDict(collections.abc.MutableMapping):
             self.client.delete_run(run.info.run_id)
 
     def _get_runs_with_name(self, name):
+        select_only_finished_runs = f"AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else ""
         return self.client.search_runs(
             self.experiment.experiment_id,
             filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
                           f"AND tags.`{self.mlflow_tag_prefix}._name`='{self.mlflow_tag_dict_name}' "
                           f"AND tags.`{self.mlflow_tag_prefix}._key`='{name}' "
-                          f"AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else "",
+                          f"{select_only_finished_runs}",
             max_results=SEARCH_MAX_RESULTS_THRESHOLD)
 
     def _get_all_runs(self):
+        select_only_finished_runs = f"AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else ""
         return self.client.search_runs(
             self.experiment.experiment_id,
             filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
                           f"AND tags.`{self.mlflow_tag_prefix}._name`='{self.mlflow_tag_dict_name}' "
-                          f"AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else "",
+                          f"{select_only_finished_runs}",
             max_results=SEARCH_MAX_RESULTS_THRESHOLD)
 
     def _load_artifact(self, run_id):
