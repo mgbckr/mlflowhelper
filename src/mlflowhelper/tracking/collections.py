@@ -520,7 +520,7 @@ class MlflowDict(collections.abc.MutableMapping):
 
                 # get remote value and timestamp
                 run: mlflow.entities.Run = self.get_run(k)
-                remote_timestamp = int(run.data.tags[f"{self.mlflow_tag_prefix}._timestamp"])
+                remote_timestamp = int(run.data.tags.get(f"{self.mlflow_tag_prefix}._timestamp", "0"))
 
                 # choose value to return based on timestamp
                 if remote_timestamp > local_timestamp:
@@ -543,7 +543,7 @@ class MlflowDict(collections.abc.MutableMapping):
                     raise KeyError(f"Key does not exist: {k}")
             else:
                 value = self._load_artifact(run.info.run_id)
-                timestamp = int(run.data.tags[f"{self.mlflow_tag_prefix}._timestamp"])
+                timestamp = int(run.data.tags.get(f"{self.mlflow_tag_prefix}._timestamp", "0"))
                 if self.local_cache:
                     self.local_values[k] = value, timestamp
                 return value
