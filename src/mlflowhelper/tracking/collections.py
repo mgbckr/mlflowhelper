@@ -286,7 +286,10 @@ class MlflowDict(collections.abc.MutableMapping):
 
         except Exception as e:
             # clean up run in case of error
-            self.client.delete_run(run.info.run_id)
+            try:
+                self.client.delete_run(run.info.run_id)
+            except Exception as e2:
+                warnings.warn(f"Clean-up failed: {e2}")
             raise e
 
     def _custom_logging(self, logger, artifact_manager, run, key, value):
