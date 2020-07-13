@@ -10,6 +10,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Iterator
 
+import cloudpickle
 import mlflow
 import mlflow.entities
 import mlflow.exceptions
@@ -70,6 +71,17 @@ class MlflowDict(collections.abc.MutableMapping):
             with open(path, "rb") as f:
                 return pickle.load(f)
 
+    class CloudPickler(Pickler):
+        """Pickler using `pickle` as default"""
+
+        def dump(self, value, path):
+            with open(path, "wb") as f:
+                cloudpickle.dump(value, f)
+
+        def load(self, path):
+            with open(path, "rb") as f:
+                return cloudpickle.load(f)
+
     class Logger:
         """Class for custom logging."""
         @abstractmethod
@@ -92,7 +104,7 @@ class MlflowDict(collections.abc.MutableMapping):
             mlflow_tag_name_separator=": ",
             mlflow_tag_prefix="_mlflowdict",
             mlflow_custom_logger=None,
-            mlflow_pickler: typing.Union[Pickler, str] = 'pickle',
+            mlflow_pickler: typing.Union[Pickler, str] = 'cloudpickle',
             sync_mode=None,
             local_value_cache=True,
             lazy_value_cache=True,
@@ -170,6 +182,8 @@ class MlflowDict(collections.abc.MutableMapping):
         self.mlflow_custom_logger = mlflow_custom_logger
         if mlflow_pickler == "pickle":
             self.mlflow_pickler = MlflowDict.DefaultPickler()
+        if mlflow_pickler == "cloudpickle":
+            self.mlflow_pickler = MlflowDict.CloudPickler()
         else:
             self.mlflow_pickler = mlflow_pickler
 
