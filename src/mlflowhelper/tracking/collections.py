@@ -1,4 +1,5 @@
 import collections.abc
+import functools
 import os
 import pickle
 import socket
@@ -32,6 +33,25 @@ class MetaValue:
     artifacts: typing.Union[list, dict, tuple] = None
     status: typing.Union[dict, tuple, str] = None
     update: bool = False
+
+
+def cached(_func=None, *, cache, key):
+    def decorator_cached(func):
+        @functools.wraps(func)
+        def wrapper_cached(*args, **kwargs):
+            if key in cache:
+                return cache[key]
+            else:
+                value = func(*args, **kwargs)
+                cache[key] = value
+            return value
+
+        return wrapper_cached
+
+    if _func is None:
+        return decorator_cached
+    else:
+        return decorator_cached(_func)
 
 
 class MlflowDict(collections.abc.MutableMapping):
