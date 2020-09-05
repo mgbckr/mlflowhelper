@@ -18,7 +18,6 @@ import mlflow.exceptions
 import mlflow.store.tracking
 import mlflow.utils.mlflow_tags
 import mlflowhelper.tracking.artifactmanager
-import tqdm
 from mlflow.store.tracking import SEARCH_MAX_RESULTS_THRESHOLD
 
 DICT_IDENTIFIER = "mlflow.tracking.collections.MlflowDict"
@@ -419,6 +418,7 @@ class MlflowDict(collections.abc.MutableMapping):
 
     def delete_all(self, verbose=False):
         if verbose:
+            import tqdm
             it = tqdm.tqdm(list(self.keys()))
         else:
             it = list(self.keys())
