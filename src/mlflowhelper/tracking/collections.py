@@ -17,8 +17,9 @@ import mlflow.entities
 import mlflow.exceptions
 import mlflow.store.tracking
 import mlflow.utils.mlflow_tags
-import mlflowhelper.tracking.artifactmanager
 from mlflow.store.tracking import SEARCH_MAX_RESULTS_THRESHOLD
+
+import mlflowhelper.tracking.artifactmanager
 
 DICT_IDENTIFIER = "mlflow.tracking.collections.MlflowDict"
 
@@ -158,7 +159,14 @@ class MlflowDict(collections.abc.MutableMapping):
             See `MlflowDict.Pickler` for the interface. If set to `None`, no value will be logged and the result upon
             retrieving an element from the dict will be `None`.
         :param sync_mode:
-            Specifies the synchronization mode.
+            Specifies the synchronization mode of keys and items.
+
+            WARNING:
+            Any sync mode will trigger rather expensive database queries
+            slowing down item retrieval and key listings considerably.
+            This particularly heavily influences iterators over keys and items.
+
+            Available modes:
             * None: no active synchronization.
             * "keys": will keep keys synchronized. This means that we do not cache keys,
                 but update them every time this dict is accessed.
@@ -168,6 +176,7 @@ class MlflowDict(collections.abc.MutableMapping):
                 Caching values will only take effect if local value caching is activated (`local_value_cache=True`).
                 If a value is in the local cache but the synchronized key has a newer timestamp
                 then the value is updated.
+
         :param local_value_cache:
             Whether to keep a local cache of values.
         :param lazy_value_cache:
@@ -337,7 +346,7 @@ class MlflowDict(collections.abc.MutableMapping):
             self.client.delete_run(run.info.run_id)
 
     def _get_runs_with_name(self, name):
-        select_only_finished_runs = f"AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else ""
+        select_only_finished_runs = "AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else ""
         return self.client.search_runs(
             self.experiment.experiment_id,
             filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
@@ -347,7 +356,7 @@ class MlflowDict(collections.abc.MutableMapping):
             max_results=SEARCH_MAX_RESULTS_THRESHOLD)
 
     def _get_all_runs(self):
-        select_only_finished_runs = f"AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else ""
+        select_only_finished_runs = "AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else ""
         return self.client.search_runs(
             self.experiment.experiment_id,
             filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
@@ -403,6 +412,49 @@ class MlflowDict(collections.abc.MutableMapping):
                     del self.local_values[k]
 
         return self.local_all_keys
+
+    def reset_cache(self):
+        """
+        Empty/reset cache.
+        """
+        self.local_values = dict()
+
+    def fill_cache(self, reset_cache=False, drop_none=False, mode="silent"):
+        """
+        Convenience method to update cache.
+        Note that existing values will not be updated unless the whole cache is reset (`reset_cache`).
+        """
+
+        if mode not in ["tqdm", "print", "silent"]:
+            raise ValueError(f"Invalid mode: {mode}")
+
+        if not self.local_cache:
+            raise ValueError("Local cache is not enabled.")
+        else:
+            if reset_cache:
+                self.reset_cache()
+
+            sync_mode_backup = self.sync_mode
+            self.sync_mode = None
+            try:
+                self.update_keys()
+                if mode == "tqdm":
+                    import tqdm
+                    for k in tqdm.tqdm(list(self.keys())):
+                        v = self[k]
+                        if drop_none and v is None:
+                            warnings.warn(f"Dropping `None` entry: {k}")
+                            del self[k]
+                elif mode == "print" or mode == "silent":
+                    for k in list(self.keys()):
+                        if mode == "print":
+                            print("Loading:", k)
+                        v = self[k]
+                        if drop_none and v is None:
+                            warnings.warn(f"Dropping `None` entry: {k}")
+                            del self[k]
+            finally:
+                self.sync_mode = sync_mode_backup
 
     def runs(self, include_values=False):
         """
