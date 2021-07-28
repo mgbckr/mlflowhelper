@@ -1,4 +1,5 @@
 import collections.abc
+import functools
 import os
 import pickle
 import socket
@@ -10,14 +11,15 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Iterator
 
+import cloudpickle
 import mlflow
 import mlflow.entities
 import mlflow.exceptions
 import mlflow.store.tracking
 import mlflow.utils.mlflow_tags
-import mlflowhelper.tracking.artifactmanager
-import tqdm
 from mlflow.store.tracking import SEARCH_MAX_RESULTS_THRESHOLD
+
+import mlflowhelper.tracking.artifactmanager
 
 DICT_IDENTIFIER = "mlflow.tracking.collections.MlflowDict"
 
@@ -31,6 +33,25 @@ class MetaValue:
     artifacts: typing.Union[list, dict, tuple] = None
     status: typing.Union[dict, tuple, str] = None
     update: bool = False
+
+
+def cached(_func=None, overwrite=False, *, cache, key):
+    def decorator_cached(func):
+        @functools.wraps(func)
+        def wrapper_cached(*args, **kwargs):
+            if key not in cache or overwrite:
+                value = func(*args, **kwargs)
+                cache[key] = value
+            else:
+                return cache[key]
+            return value
+
+        return wrapper_cached
+
+    if _func is None:
+        return decorator_cached
+    else:
+        return decorator_cached(_func)
 
 
 class MlflowDict(collections.abc.MutableMapping):
@@ -70,6 +91,17 @@ class MlflowDict(collections.abc.MutableMapping):
             with open(path, "rb") as f:
                 return pickle.load(f)
 
+    class CloudPickler(Pickler):
+        """Pickler using `pickle` as default"""
+
+        def dump(self, value, path):
+            with open(path, "wb") as f:
+                cloudpickle.dump(value, f)
+
+        def load(self, path):
+            with open(path, "rb") as f:
+                return cloudpickle.load(f)
+
     class Logger:
         """Class for custom logging."""
         @abstractmethod
@@ -92,7 +124,7 @@ class MlflowDict(collections.abc.MutableMapping):
             mlflow_tag_name_separator=": ",
             mlflow_tag_prefix="_mlflowdict",
             mlflow_custom_logger=None,
-            mlflow_pickler: typing.Union[Pickler, str] = 'pickle',
+            mlflow_pickler: typing.Union[Pickler, str] = 'cloudpickle',
             sync_mode=None,
             local_value_cache=True,
             lazy_value_cache=True,
@@ -127,7 +159,14 @@ class MlflowDict(collections.abc.MutableMapping):
             See `MlflowDict.Pickler` for the interface. If set to `None`, no value will be logged and the result upon
             retrieving an element from the dict will be `None`.
         :param sync_mode:
-            Specifies the synchronization mode.
+            Specifies the synchronization mode of keys and items.
+
+            WARNING:
+            Any sync mode will trigger rather expensive database queries
+            slowing down item retrieval and key listings considerably.
+            This particularly heavily influences iterators over keys and items.
+
+            Available modes:
             * None: no active synchronization.
             * "keys": will keep keys synchronized. This means that we do not cache keys,
                 but update them every time this dict is accessed.
@@ -137,6 +176,7 @@ class MlflowDict(collections.abc.MutableMapping):
                 Caching values will only take effect if local value caching is activated (`local_value_cache=True`).
                 If a value is in the local cache but the synchronized key has a newer timestamp
                 then the value is updated.
+
         :param local_value_cache:
             Whether to keep a local cache of values.
         :param lazy_value_cache:
@@ -170,6 +210,8 @@ class MlflowDict(collections.abc.MutableMapping):
         self.mlflow_custom_logger = mlflow_custom_logger
         if mlflow_pickler == "pickle":
             self.mlflow_pickler = MlflowDict.DefaultPickler()
+        if mlflow_pickler == "cloudpickle":
+            self.mlflow_pickler = MlflowDict.CloudPickler()
         else:
             self.mlflow_pickler = mlflow_pickler
 
@@ -286,7 +328,10 @@ class MlflowDict(collections.abc.MutableMapping):
 
         except Exception as e:
             # clean up run in case of error
-            self.client.delete_run(run.info.run_id)
+            try:
+                self.client.delete_run(run.info.run_id)
+            except Exception as e2:
+                warnings.warn(f"Clean-up failed: {e2}")
             raise e
 
     def _custom_logging(self, logger, artifact_manager, run, key, value):
@@ -301,7 +346,7 @@ class MlflowDict(collections.abc.MutableMapping):
             self.client.delete_run(run.info.run_id)
 
     def _get_runs_with_name(self, name):
-        select_only_finished_runs = f"AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else ""
+        select_only_finished_runs = "AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else ""
         return self.client.search_runs(
             self.experiment.experiment_id,
             filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
@@ -311,7 +356,7 @@ class MlflowDict(collections.abc.MutableMapping):
             max_results=SEARCH_MAX_RESULTS_THRESHOLD)
 
     def _get_all_runs(self):
-        select_only_finished_runs = f"AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else ""
+        select_only_finished_runs = "AND attributes.status = 'FINISHED'" if self.only_load_finished_runs else ""
         return self.client.search_runs(
             self.experiment.experiment_id,
             filter_string=f"tags.`{self.mlflow_tag_prefix}._class` = '{DICT_IDENTIFIER}' "
@@ -368,6 +413,49 @@ class MlflowDict(collections.abc.MutableMapping):
 
         return self.local_all_keys
 
+    def reset_cache(self):
+        """
+        Empty/reset cache.
+        """
+        self.local_values = dict()
+
+    def fill_cache(self, reset_cache=False, drop_none=False, mode="silent"):
+        """
+        Convenience method to update cache.
+        Note that existing values will not be updated unless the whole cache is reset (`reset_cache`).
+        """
+
+        if mode not in ["tqdm", "print", "silent"]:
+            raise ValueError(f"Invalid mode: {mode}")
+
+        if not self.local_cache:
+            raise ValueError("Local cache is not enabled.")
+        else:
+            if reset_cache:
+                self.reset_cache()
+
+            sync_mode_backup = self.sync_mode
+            self.sync_mode = None
+            try:
+                self.update_keys()
+                if mode == "tqdm":
+                    import tqdm
+                    for k in tqdm.tqdm(list(self.keys())):
+                        v = self[k]
+                        if drop_none and v is None:
+                            warnings.warn(f"Dropping `None` entry: {k}")
+                            del self[k]
+                elif mode == "print" or mode == "silent":
+                    for k in list(self.keys()):
+                        if mode == "print":
+                            print("Loading:", k)
+                        v = self[k]
+                        if drop_none and v is None:
+                            warnings.warn(f"Dropping `None` entry: {k}")
+                            del self[k]
+            finally:
+                self.sync_mode = sync_mode_backup
+
     def runs(self, include_values=False):
         """
         :param include_values:
@@ -382,6 +470,7 @@ class MlflowDict(collections.abc.MutableMapping):
 
     def delete_all(self, verbose=False):
         if verbose:
+            import tqdm
             it = tqdm.tqdm(list(self.keys()))
         else:
             it = list(self.keys())
