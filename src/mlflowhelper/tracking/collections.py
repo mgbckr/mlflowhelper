@@ -35,15 +35,15 @@ class MetaValue:
     update: bool = False
 
 
-def cached(_func=None, *, cache, key):
+def cached(_func=None, overwrite=False, *, cache, key):
     def decorator_cached(func):
         @functools.wraps(func)
         def wrapper_cached(*args, **kwargs):
-            if key in cache:
-                return cache[key]
-            else:
+            if key not in cache or overwrite:
                 value = func(*args, **kwargs)
                 cache[key] = value
+            else:
+                return cache[key]
             return value
 
         return wrapper_cached
